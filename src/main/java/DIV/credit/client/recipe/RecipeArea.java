@@ -207,7 +207,7 @@ public class RecipeArea {
     public void render(GuiGraphics g, int mouseX, int mouseY) {
         if (drawable != null) {
             drawable.drawRecipe(g, mouseX, mouseY);
-            // JEI が displayIngredients を見て描画するので overlay 不要
+            renderUserEditOverlay(g);
         } else if (statusMessage != null) {
             var font = Minecraft.getInstance().font;
             int tx = areaLeft + (areaWidth - font.width(statusMessage)) / 2;
@@ -226,13 +226,28 @@ public class RecipeArea {
      * カテゴリの slot 枠（GT/Mek の固有テクスチャ等）は尊重される。
      */
     private static Field DISPLAY_INGREDIENTS_FIELD;
+    private static Field OVERLAY_FIELD;
+    private static final String LDLIB_WRAPPER_CLASS = "com.lowdragmc.lowdraglib.jei.IRecipeIngredientSlotWrapper";
     static {
         try {
             Class<?> cls = Class.forName("mezz.jei.library.gui.ingredients.RecipeSlot");
             DISPLAY_INGREDIENTS_FIELD = cls.getDeclaredField("displayIngredients");
             DISPLAY_INGREDIENTS_FIELD.setAccessible(true);
+            OVERLAY_FIELD = cls.getDeclaredField("overlay");
+            OVERLAY_FIELD.setAccessible(true);
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] Cannot access RecipeSlot.displayIngredients via reflection: {}", e.toString());
+            Credit.LOGGER.warn("[CraftPattern] Cannot access RecipeSlot fields via reflection: {}", e.toString());
+        }
+    }
+
+    /** RecipeSlot.overlay が LDLib の IRecipeIngredientSlotWrapper か判定。LDLib 未ロード環境でも CCE 回避。 */
+    private static boolean isLDLibWrapped(IRecipeSlotView view) {
+        if (OVERLAY_FIELD == null) return false;
+        try {
+            Object overlay = OVERLAY_FIELD.get(view);
+            return overlay != null && overlay.getClass().getName().equals(LDLIB_WRAPPER_CLASS);
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -392,15 +407,21 @@ public class RecipeArea {
         if (drawable != null) drawable.drawOverlays(g, mouseX, mouseY);
     }
 
-    /** ユーザー編集スロット上にホバー時、中身の名前 + 量を tooltip 表示。 */
+    /**
+     * ユーザー編集スロット上にホバー時、中身の名前 + 量を tooltip 表示。
+     * LDLib-wrap slot のみ対象 (非ラップは JEI 自身が displayIngredients 経由で
+     * tooltip 出すので、ここで出すと名前が二重になる)。
+     */
     public void renderUserEditTooltip(GuiGraphics g, int mouseX, int mouseY) {
         if (drawable == null || draft == null) return;
         Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mouseX, mouseY);
         if (slotOpt.isEmpty()) return;
-        int idx = findSlotIndex(slotOpt.get().slot());
+        IRecipeSlotDrawable hoverSlot = slotOpt.get().slot();
+        int idx = findSlotIndex(hoverSlot);
         if (idx < 0 || idx >= draft.slotCount()) return;
         IngredientSpec spec = draft.getSlot(idx);
         if (spec.isEmpty()) return;
+        if (!isLDLibWrapped(hoverSlot)) return;
         g.renderTooltip(Minecraft.getInstance().font,
             Component.literal(describeForTooltip(spec)), mouseX, mouseY);
     }
