@@ -52,6 +52,11 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
             if (!area.getDraft().acceptsAt(info.slotIndex(), testSpec)) { rejected++; continue; }
             targets.add(new SlotTarget<>(info.screenArea(), ingredient.getType(), info.slotIndex(), area));
         }
+        // StackBuilder helper widget も drop ターゲットに（item/fluid/gas 全部受け入れ）
+        Rect2i sbArea = gui.getStackBuilderArea();
+        if (sbArea != null) {
+            targets.add(new StackBuilderTarget<>(sbArea, ingredient.getType(), gui));
+        }
         if (doStart) {
             Credit.LOGGER.info("[CraftPattern] ghost drag offered {} targets ({} rejected by acceptsAt)",
                 targets.size(), rejected);
@@ -64,15 +69,21 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
 
     private static final boolean HAS_MEK = ModList.get().isLoaded("mekanism");
 
-    /** I 型 → IngredientSpec 変換（item / fluid / gas 対応）。 */
+    /** I 型 → IngredientSpec 変換（item / fluid / gas 対応）。fluid/gas 量は config の default で上書き。 */
     private static <T> IngredientSpec toSpec(IIngredientType<T> type, T value) {
         Optional<ItemStack> itemOpt = VanillaTypes.ITEM_STACK.castIngredient(value);
         if (itemOpt.isPresent()) return RecipeArea.ingredientFromCursor(itemOpt.get());
         Optional<FluidStack> fluidOpt = ForgeTypes.FLUID_STACK.castIngredient(value);
-        if (fluidOpt.isPresent()) return IngredientSpec.ofFluid(fluidOpt.get());
+        if (fluidOpt.isPresent()) {
+            FluidStack fs = fluidOpt.get().copy();
+            fs.setAmount(DIV.credit.CreditConfig.FLUID_DEFAULT_AMOUNT.get());
+            return IngredientSpec.ofFluid(fs);
+        }
         if (HAS_MEK) {
             IngredientSpec gasSpec = DIV.credit.client.jei.mek.MekanismIngredientAdapter.tryGas(type, value);
-            if (gasSpec != null && !gasSpec.isEmpty()) return gasSpec;
+            if (gasSpec instanceof IngredientSpec.Gas g && g.gasId() != null) {
+                return IngredientSpec.ofGas(g.gasId(), DIV.credit.CreditConfig.GAS_DEFAULT_AMOUNT.get());
+            }
         }
         return IngredientSpec.EMPTY;
     }
@@ -98,6 +109,29 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
             Credit.LOGGER.info("[CraftPattern] ghost drag ACCEPT: slot[{}] spec={}",
                 slotIndex, spec.isEmpty() ? "EMPTY" : spec.getClass().getSimpleName());
             if (!spec.isEmpty()) recipeArea.setSlotIngredient(slotIndex, spec);
+        }
+    }
+
+    /** StackBuilder helper widget への ghost drop target。 */
+    private static final class StackBuilderTarget<I> implements Target<I> {
+        private final Rect2i area;
+        private final IIngredientType<I> type;
+        private final BuilderScreen gui;
+
+        StackBuilderTarget(Rect2i area, IIngredientType<I> type, BuilderScreen gui) {
+            this.area = area;
+            this.type = type;
+            this.gui  = gui;
+        }
+
+        @Override public Rect2i getArea() { return area; }
+
+        @Override
+        public void accept(I ingredient) {
+            IngredientSpec spec = toSpec(type, ingredient);
+            Credit.LOGGER.info("[CraftPattern] ghost drag ACCEPT: stackBuilder spec={}",
+                spec.isEmpty() ? "EMPTY" : spec.getClass().getSimpleName());
+            if (!spec.isEmpty()) gui.getStackBuilder().setContent(spec);
         }
     }
 }

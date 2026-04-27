@@ -47,6 +47,7 @@ public class GTAssemblerDraft implements RecipeDraft {
     }
 
     @Override public int slotCount() { return SLOT_COUNT; }
+    @Override public boolean usesGtElectricity() { return true; }
     @Override public IngredientSpec getSlot(int i) { return slots[i]; }
     @Override public IngredientSpec getOutput() { return slots[IDX_ITEM_OUTPUT]; }
     @Override public RecipeType<?> recipeType() { return jeiType; }
@@ -86,7 +87,7 @@ public class GTAssemblerDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Duration", NumericField.Kind.INT, () -> duration, v -> duration = (int) v, 1, 1_000_000),
+            new NumericField("Duration", NumericField.Kind.INT, () -> duration, v -> duration = (int) v, 1, Integer.MAX_VALUE),
             new NumericField("EUt",      NumericField.Kind.INT, () -> EUt,      v -> EUt      = (long) v, 0, Integer.MAX_VALUE)
         );
     }

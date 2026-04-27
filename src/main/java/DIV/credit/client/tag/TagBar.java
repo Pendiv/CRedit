@@ -6,12 +6,17 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraftforge.fml.ModList;
 
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * レシピエリア下部のタグ検索バー。
@@ -141,6 +146,14 @@ public class TagBar {
             resultStack = ItemStack.EMPTY;
             return;
         }
+
+        // 例外処理: GT programmed circuit。例: "gtceu:circuit(7)" or "circuit(7)"
+        ItemStack circuit = tryProgrammedCircuit(input);
+        if (!circuit.isEmpty()) {
+            resultStack = circuit;
+            return;
+        }
+
         if (input.startsWith("#")) input = input.substring(1);
 
         ResourceLocation rl;
@@ -158,5 +171,26 @@ public class TagBar {
         } else {
             resultStack = ItemStack.EMPTY;
         }
+    }
+
+    private static final Pattern CIRCUIT_PATTERN =
+        Pattern.compile("^(?:gtceu:)?circuit\\((\\d{1,2})\\)$");
+    private static final int CIRCUIT_MAX = 32;
+    private static final ResourceLocation CIRCUIT_ITEM_ID =
+        new ResourceLocation("gtceu", "programmed_circuit");
+
+    /** "gtceu:circuit(N)" or "circuit(N)" → 該当 configuration の programmed circuit ItemStack。 */
+    private static ItemStack tryProgrammedCircuit(String input) {
+        if (!ModList.get().isLoaded("gtceu")) return ItemStack.EMPTY;
+        Matcher m = CIRCUIT_PATTERN.matcher(input);
+        if (!m.matches()) return ItemStack.EMPTY;
+        int config;
+        try { config = Integer.parseInt(m.group(1)); } catch (NumberFormatException e) { return ItemStack.EMPTY; }
+        if (config < 0 || config > CIRCUIT_MAX) return ItemStack.EMPTY;
+        Item item = BuiltInRegistries.ITEM.get(CIRCUIT_ITEM_ID);
+        if (item == Items.AIR) return ItemStack.EMPTY;
+        ItemStack stack = new ItemStack(item);
+        stack.getOrCreateTag().putInt("Configuration", config);
+        return stack;
     }
 }

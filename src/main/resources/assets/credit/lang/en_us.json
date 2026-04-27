@@ -1,0 +1,11 @@
+{
+  "gui.credit.notice.unsupported": "Editing not supported for this category",
+  "gui.credit.notice.sample": "Showing existing recipe as sample (edit any slot to start a draft)",
+
+  "command.credit.craftpattern.desc": "Open the CraftPattern recipe builder UI",
+  "command.credit.craftpattern_probe.desc": "Dump full recipe data for a category to file (diagnostic)",
+  "command.credit.craftpattern_poc.desc": "Capture JEI category layout (developer POC)",
+  "command.credit.craftpattern_help.desc": "List CraftPattern commands with descriptions",
+  "command.credit.help.header": "CraftPattern commands:",
+  "command.credit.help.hover_click": "Click to insert into chat. Hover for description."
+}

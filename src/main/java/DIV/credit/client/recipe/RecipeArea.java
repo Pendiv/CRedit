@@ -6,16 +6,19 @@ import DIV.credit.client.draft.RecipeDraft;
 import DIV.credit.client.fluid.FluidItemHelper;
 import DIV.credit.client.tag.TagItemHelper;
 import DIV.credit.jei.CraftPatternJeiPlugin;
+import mezz.jei.api.forge.ForgeTypes;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.gui.inputs.RecipeSlotUnderMouse;
+import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
+import java.lang.reflect.Field;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -67,6 +70,11 @@ public class RecipeArea {
         return draft;
     }
 
+    /** "DRAFT" / "FALLBACK" / "READONLY" / "EMPTY" / "NONE" */
+    public String getMode() {
+        return currentMode;
+    }
+
     public void rebuild() {
         rebuildDrawable();
     }
@@ -109,6 +117,7 @@ public class RecipeArea {
             repositionDrawable();
             try { drawable.tick(); } catch (Exception ignored) {}
             sampledBoundsCache = sampleSlotBounds();
+            updateSlotDisplays();  // slot ごと: 編集 spec を JEI に native 描画させる / 空はクリア
             logSlotKindMapping();
         }
     }
@@ -198,6 +207,7 @@ public class RecipeArea {
     public void render(GuiGraphics g, int mouseX, int mouseY) {
         if (drawable != null) {
             drawable.drawRecipe(g, mouseX, mouseY);
+            // JEI が displayIngredients を見て描画するので overlay 不要
         } else if (statusMessage != null) {
             var font = Minecraft.getInstance().font;
             int tx = areaLeft + (areaWidth - font.width(statusMessage)) / 2;
@@ -206,8 +216,212 @@ public class RecipeArea {
         }
     }
 
+    /**
+     * FALLBACK / DRAFT 中、ユーザーが編集したスロットには既存表示を上書きして
+     * ユーザーの ingredient を JEI renderer で描く。
+     */
+    /**
+     * JEI RecipeSlot の displayIngredients を reflection で空にする。
+     * これで slot は カテゴリ固有の background + overlay だけ描画して中身を skip。
+     * カテゴリの slot 枠（GT/Mek の固有テクスチャ等）は尊重される。
+     */
+    private static Field DISPLAY_INGREDIENTS_FIELD;
+    static {
+        try {
+            Class<?> cls = Class.forName("mezz.jei.library.gui.ingredients.RecipeSlot");
+            DISPLAY_INGREDIENTS_FIELD = cls.getDeclaredField("displayIngredients");
+            DISPLAY_INGREDIENTS_FIELD.setAccessible(true);
+        } catch (Exception e) {
+            Credit.LOGGER.warn("[CraftPattern] Cannot access RecipeSlot.displayIngredients via reflection: {}", e.toString());
+        }
+    }
+
+    /**
+     * 各 slot の displayIngredients を更新：
+     * - 編集なし → 空リスト（JEI は背景のみ描画 → カテゴリ固有の空スロット枠が見える）
+     * - 編集あり → ユーザー spec を ITypedIngredient で設定 → JEI が slot サイズで native 描画
+     *   （Mek の tank slot 16x58 等で fluid/gas が正しいサイズで描画される）
+     */
+    private void updateSlotDisplays() {
+        if (drawable == null || DISPLAY_INGREDIENTS_FIELD == null || draft == null) return;
+        IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+        if (rt == null) return;
+        var im = rt.getIngredientManager();
+        var views = drawable.getRecipeSlotsView().getSlotViews();
+        int limit = Math.min(views.size(), draft.slotCount());
+        for (int i = 0; i < views.size(); i++) {
+            IngredientSpec spec = (i < limit) ? draft.getSlot(i) : IngredientSpec.EMPTY;
+            List<Optional<ITypedIngredient<?>>> displayList = List.of();
+            if (!spec.isEmpty()) {
+                ITypedIngredient<?> ti = specToTypedIngredient(im, spec);
+                if (ti != null) displayList = List.of(Optional.of(ti));
+            }
+            try {
+                DISPLAY_INGREDIENTS_FIELD.set(views.get(i), displayList);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static ITypedIngredient<?> specToTypedIngredient(mezz.jei.api.runtime.IIngredientManager im, IngredientSpec spec) {
+        try {
+            if (spec instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+                return im.createTypedIngredient(mezz.jei.api.constants.VanillaTypes.ITEM_STACK, it.stack()).orElse(null);
+            }
+            if (spec instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+                return im.createTypedIngredient(ForgeTypes.FLUID_STACK, fl.stack()).orElse(null);
+            }
+            if (spec instanceof IngredientSpec.Gas g && g.gasId() != null) {
+                if (!net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) return null;
+                var gasStack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(g);
+                if (gasStack.isEmpty()) return null;
+                return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_GAS, gasStack).orElse(null);
+            }
+            // Tag / FluidTag: convert to first matching item/fluid for display
+            if (spec instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+                ItemStack icon = TagItemHelper.createTagNameTag(tg.tagId());
+                if (!icon.isEmpty()) return im.createTypedIngredient(mezz.jei.api.constants.VanillaTypes.ITEM_STACK, icon).orElse(null);
+            }
+            if (spec instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
+                ItemStack icon = TagItemHelper.createFluidTagNameTag(ft.tagId(), ft.amount());
+                if (!icon.isEmpty()) return im.createTypedIngredient(mezz.jei.api.constants.VanillaTypes.ITEM_STACK, icon).orElse(null);
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /**
+     * カテゴリ描画（drawRecipe 経由）後、編集済みスロットだけユーザー ingredient を上書き描画。
+     * slot 中身は clearAllSlotIngredients で既に空になってるので、
+     * 編集なしスロットはカテゴリ固有の空スロット枠が見える。
+     */
+    private void renderUserEditOverlay(GuiGraphics g) {
+        if (draft == null) return;
+        IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+        if (rt == null) return;
+        Rect2i layoutRect = drawable.getRect();
+        var views = drawable.getRecipeSlotsView().getSlotViews();
+        int limit = Math.min(views.size(), draft.slotCount());
+        for (int i = 0; i < limit; i++) {
+            IngredientSpec spec = draft.getSlot(i);
+            if (spec.isEmpty()) continue;
+            int sx, sy;
+            var view = views.get(i);
+            if (view instanceof IRecipeSlotDrawable sd) {
+                Rect2i r = sd.getRect();
+                sx = layoutRect.getX() + r.getX();
+                sy = layoutRect.getY() + r.getY();
+            } else {
+                int[] b = sampledBoundsCache.get(view);
+                if (b == null) continue;
+                sx = b[0]; sy = b[1];
+            }
+            renderSpec(g, rt, spec, sx, sy);
+        }
+    }
+
+    /** mouse 位置の slot index を返す。drag drop 着地判定用。-1 = no slot。 */
+    public int findSlotIndexAt(double mx, double my) {
+        if (drawable == null || draft == null) return -1;
+        Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mx, my);
+        if (slotOpt.isEmpty()) return -1;
+        int idx = findSlotIndex(slotOpt.get().slot());
+        return (idx >= 0 && idx < draft.slotCount()) ? idx : -1;
+    }
+
+    /** mouse 位置の slot に編集済み spec があれば返す。drag 開始判定用。 */
+    @Nullable
+    public IngredientSpec getEditedSpecAt(double mx, double my) {
+        if (drawable == null || draft == null) return null;
+        Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mx, my);
+        if (slotOpt.isEmpty()) return null;
+        int idx = findSlotIndex(slotOpt.get().slot());
+        if (idx < 0 || idx >= draft.slotCount()) return null;
+        IngredientSpec spec = draft.getSlot(idx);
+        return spec.isEmpty() ? null : spec;
+    }
+
+    public static void renderSpecAt(GuiGraphics g, IngredientSpec spec, int x, int y) {
+        IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+        if (rt == null) return;
+        renderSpec(g, rt, spec, x, y);
+    }
+
+    private static void renderSpec(GuiGraphics g, IJeiRuntime rt, IngredientSpec spec, int x, int y) {
+        try {
+            if (spec instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+                g.renderItem(it.stack(), x, y);
+                g.renderItemDecorations(Minecraft.getInstance().font, it.stack(), x, y);
+                return;
+            }
+            if (spec instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+                ItemStack icon = TagItemHelper.createTagNameTag(tg.tagId());
+                if (!icon.isEmpty()) g.renderItem(icon, x, y);
+                return;
+            }
+            if (spec instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
+                ItemStack icon = TagItemHelper.createFluidTagNameTag(ft.tagId(), ft.amount());
+                if (!icon.isEmpty()) g.renderItem(icon, x, y);
+                return;
+            }
+            if (spec instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+                rt.getIngredientManager().getIngredientRenderer(ForgeTypes.FLUID_STACK)
+                    .render(g, fl.stack(), x, y);
+                return;
+            }
+            if (spec instanceof IngredientSpec.Gas gas && gas.gasId() != null) {
+                renderGas(g, rt, gas, x, y);
+                return;
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) return;
+        DIV.credit.client.jei.mek.MekanismIngredientAdapter adapter = null;  // touch-load
+        var gasStack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(gas);
+        if (gasStack.isEmpty()) return;
+        var type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+        var renderer = (mezz.jei.api.ingredients.IIngredientRenderer) rt.getIngredientManager()
+            .getIngredientRenderer(type);
+        renderer.render(g, gasStack, x, y);
+    }
+
     public void renderOverlays(GuiGraphics g, int mouseX, int mouseY) {
         if (drawable != null) drawable.drawOverlays(g, mouseX, mouseY);
+    }
+
+    /** ユーザー編集スロット上にホバー時、中身の名前 + 量を tooltip 表示。 */
+    public void renderUserEditTooltip(GuiGraphics g, int mouseX, int mouseY) {
+        if (drawable == null || draft == null) return;
+        Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mouseX, mouseY);
+        if (slotOpt.isEmpty()) return;
+        int idx = findSlotIndex(slotOpt.get().slot());
+        if (idx < 0 || idx >= draft.slotCount()) return;
+        IngredientSpec spec = draft.getSlot(idx);
+        if (spec.isEmpty()) return;
+        g.renderTooltip(Minecraft.getInstance().font,
+            Component.literal(describeForTooltip(spec)), mouseX, mouseY);
+    }
+
+    private static String describeForTooltip(IngredientSpec s) {
+        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+            return it.stack().getDisplayName().getString() + " ×" + it.stack().getCount();
+        }
+        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+            return "#" + tg.tagId() + " ×" + tg.count();
+        }
+        if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+            return fl.stack().getDisplayName().getString() + " " + fl.stack().getAmount() + "mB";
+        }
+        if (s instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
+            return "#" + ft.tagId() + " " + ft.amount() + "mB";
+        }
+        if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
+            return g.gasId() + " " + g.amount() + "mB";
+        }
+        return s.toString();
     }
 
     public void tick() {
@@ -262,28 +476,39 @@ public class RecipeArea {
             slotRectStr);
         if (slotIndex < 0 || slotIndex >= draft.slotCount()) return true;
 
+        boolean cursorEmpty = (cursor == null || cursor.isEmpty());
+
         if (button == 0) {
-            if (cursor != null && !cursor.isEmpty()) {
+            if (!cursorEmpty) {
                 IngredientSpec spec = ingredientFromCursor(cursor);
                 if (!draft.acceptsAt(slotIndex, spec)) {
                     Credit.LOGGER.info("[CraftPattern] slot[{}] REJECTED: spec={} kind={}",
                         slotIndex, spec.getClass().getSimpleName(), draft.slotKind(slotIndex).name());
                     return true;
                 }
+                IngredientSpec prev = draft.getSlot(slotIndex);
+                if (sameSpec(prev, spec)) return true;  // skip noop rebuild
                 draft.setSlot(slotIndex, spec);
                 rebuildDrawable();
             }
         } else if (button == 1) {
             if (Screen.hasShiftDown()) {
+                boolean anyChange = false;
                 for (int i = 0; i < draft.slotCount(); i++) {
-                    draft.setSlot(i, IngredientSpec.EMPTY);
+                    if (!draft.getSlot(i).isEmpty()) {
+                        draft.setSlot(i, IngredientSpec.EMPTY);
+                        anyChange = true;
+                    }
                 }
-                rebuildDrawable();
+                if (anyChange) rebuildDrawable();
             } else if (Screen.hasControlDown()) {
-                draft.setSlot(slotIndex, IngredientSpec.EMPTY);
-                rebuildDrawable();
-            } else {
-                // bare right-click: increment count by spec step (wrap to step at max)
+                if (!draft.getSlot(slotIndex).isEmpty()) {
+                    draft.setSlot(slotIndex, IngredientSpec.EMPTY);
+                    rebuildDrawable();
+                }
+            } else if (cursorEmpty) {
+                // bare right-click WITH EMPTY CURSOR: increment count by spec step
+                // (cursor 持ったままの右クリは無視 — vanilla では別アクションだから)
                 IngredientSpec current = draft.getSlot(slotIndex);
                 if (!current.isEmpty()) {
                     int step = current.incrementStep();
@@ -295,6 +520,24 @@ public class RecipeArea {
             }
         }
         return true;
+    }
+
+    /** spec の等価判定（rebuild スキップ用）。 */
+    private static boolean sameSpec(IngredientSpec a, IngredientSpec b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        if (a.getClass() != b.getClass()) return false;
+        if (a instanceof IngredientSpec.Item ia && b instanceof IngredientSpec.Item ib)
+            return ItemStack.matches(ia.stack(), ib.stack());
+        if (a instanceof IngredientSpec.Tag ta && b instanceof IngredientSpec.Tag tb)
+            return java.util.Objects.equals(ta.tagId(), tb.tagId()) && ta.count() == tb.count();
+        if (a instanceof IngredientSpec.Fluid fa && b instanceof IngredientSpec.Fluid fb)
+            return fa.stack().isFluidStackIdentical(fb.stack());
+        if (a instanceof IngredientSpec.FluidTag fta && b instanceof IngredientSpec.FluidTag ftb)
+            return java.util.Objects.equals(fta.tagId(), ftb.tagId()) && fta.amount() == ftb.amount();
+        if (a instanceof IngredientSpec.Gas ga && b instanceof IngredientSpec.Gas gb)
+            return java.util.Objects.equals(ga.gasId(), gb.gasId()) && ga.amount() == gb.amount();
+        return false;
     }
 
     /** スロット上のスクロールで count ±1 (Shift で ±8)。 */

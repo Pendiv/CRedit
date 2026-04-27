@@ -19,7 +19,8 @@ public final class ScriptWriter {
 
     public static final String MARKER = "// @credit:insert-marker";
     public static final String MARKER_FULL = MARKER + " (do not remove)";
-    public static final String SCRIPTS_ROOT = "kubejs/server_scripts/";
+    /** デフォルトのフォールバック。実際は CreditConfig.DUMP_ROOT を見る。 */
+    public static final String SCRIPTS_ROOT = "kubejs/server_scripts/generated/";
 
     private ScriptWriter() {}
 
@@ -43,8 +44,12 @@ public final class ScriptWriter {
         if (code == null || code.isBlank()) {
             return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
         }
+        String root = DIV.credit.CreditConfig.DUMP_ROOT.get();
+        if (root == null || root.isBlank()) root = "kubejs/server_scripts";
+        // remove trailing slash
+        if (root.endsWith("/") || root.endsWith("\\")) root = root.substring(0, root.length() - 1);
         Path target = Minecraft.getInstance().gameDirectory.toPath()
-            .resolve(SCRIPTS_ROOT + draft.relativeOutputPath());
+            .resolve(root + "/" + draft.relativeOutputPath());
         try {
             Files.createDirectories(target.getParent());
             if (!Files.exists(target)) {

@@ -1,0 +1,11 @@
+{
+  "gui.credit.notice.unsupported": "このカテゴリは編集に対応していません",
+  "gui.credit.notice.sample": "編集がされていない間は、サンプルを表示しています",
+
+  "command.credit.craftpattern.desc": "CraftPattern レシピビルダー UI を開く",
+  "command.credit.craftpattern_probe.desc": "指定カテゴリのレシピ全データをファイルに出力（診断用）",
+  "command.credit.craftpattern_poc.desc": "JEI カテゴリレイアウトキャプチャ（開発 POC）",
+  "command.credit.craftpattern_help.desc": "CraftPattern コマンド一覧と説明を表示",
+  "command.credit.help.header": "CraftPattern コマンド一覧：",
+  "command.credit.help.hover_click": "クリックでチャットに挿入。ホバーで説明表示。"
+}

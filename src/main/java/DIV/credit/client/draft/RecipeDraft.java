@@ -73,6 +73,12 @@ public interface RecipeDraft {
      */
     default List<NumericField> numericFields() { return List.of(); }
 
+    /**
+     * GT 電圧 tier × アンペア helper を表示する適格性。
+     * GT 電気機械（EU 消費する）のみ true。Mek/vanilla や GT の非電気（primitive_blast 等）は false。
+     */
+    default boolean usesGtElectricity() { return false; }
+
     record NumericField(
         String label,
         Kind kind,

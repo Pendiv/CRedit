@@ -47,8 +47,12 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     public static final int DUMP_W = 21;
     public static final int DUMP_H = 10;
+    public static final int SETTINGS_W = 12;
+    public static final int SETTINGS_H = 12;
     private static final ResourceLocation DUMP_TEX =
             new ResourceLocation(Credit.MODID, "ui/dump.png");
+    private static final ResourceLocation SETTINGS_TEX =
+            new ResourceLocation(Credit.MODID, "ui/setting.png");
 
     /** Static so drafts and last-selected category persist across screen open/close (until game exit). */
     private static final DraftStore DRAFT_STORE = new DraftStore();
@@ -57,7 +61,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private CategoryTabBar tabBar;
     private final RecipeArea recipeArea = new RecipeArea();
     private final TagBar tagBar = new TagBar();
+    private final StackBuilderWidget stackBuilder = new StackBuilderWidget();
+    private final EnergyHelperWidget energyHelper = new EnergyHelperWidget();
+    /** カテゴリ別の EnergyHelper 状態 [tierIdx, ampIdx]。 */
+    private static final java.util.Map<String, int[]> energyHelperStateByCategory = new java.util.HashMap<>();
     private ItemStack ghostCursor = ItemStack.EMPTY;
+    private DIV.credit.client.draft.IngredientSpec ghostSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
+    /** drag-from-slot 状態。空でない時、cursor に追従して描画 + release で StackBuilder 等に転送。 */
+    private DIV.credit.client.draft.IngredientSpec dragSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
     private IRecipeCategory<?> currentCategory;
 
     private int recipeAreaTop;
@@ -66,6 +77,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     private int toggleX = -1, toggleY, toggleW, toggleH;
     private int dumpX   = -1, dumpY;
+    private int settingsX = -1, settingsY;
 
     // Dynamic numeric fields (derived from current draft.numericFields())
     private final List<EditBox> numericBoxes = new ArrayList<>();
@@ -110,6 +122,18 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
         tagBar.init(this, font, leftPos, tagBarY, imageWidth, this::addRenderableWidget);
 
+        // StackBuilder helper widget: Duration/EUt 編集行のさらに上に配置
+        int stackBuilderY = recipeAreaBottom - 14 - StackBuilderWidget.H - 2;
+        stackBuilder.init(this, font, leftPos + 4, stackBuilderY,
+            this::addRenderableWidget, spec -> {
+                this.ghostSpec = spec;
+                if (spec instanceof DIV.credit.client.draft.IngredientSpec.Item it) {
+                    this.ghostCursor = it.stack().copy();
+                } else {
+                    this.ghostCursor = ItemStack.EMPTY;
+                }
+            });
+
         if (tabBar != null && tabBar.getSelected() != null) {
             applyCategory(tabBar.getSelected());
         }
@@ -124,7 +148,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         List<RecipeDraft.NumericField> fields = draft.numericFields();
         if (fields.isEmpty()) return;
 
-        int boxW = 38;
+        int boxW = 50;  // 10 桁収まる程度に拡大
         int boxH = 12;
         int y    = recipeAreaBottom - boxH - 2;
         int x    = leftPos + 4;
@@ -136,7 +160,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
                 int labelW = font.width(field.label());
                 x += labelW + 3;
                 EditBox box = new EditBox(font, x, y, boxW, boxH, Component.literal(field.label()));
-                box.setMaxLength(8);
+                box.setMaxLength(10);  // 2147483647 (Int.MAX) は 10 桁
                 box.setValue(formatField(field));
                 box.setResponder(s -> onFieldChanged(field, s));
                 numericBoxes.add(box);
@@ -146,6 +170,33 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             }
         } finally {
             updatingFieldsFromDraft = false;
+        }
+
+        // EnergyHelper: GT 電気機械（usesGtElectricity）かつ EUt フィールドがある時のみ表示
+        energyHelper.setVisible(false);
+        if (draft == null || !draft.usesGtElectricity()) return;
+        for (int i = 0; i < currentFields.size(); i++) {
+            if ("EUt".equals(currentFields.get(i).label())) {
+                EditBox eutBox = numericBoxes.get(i);
+                int hx = eutBox.getX();
+                int hy = eutBox.getY() - EnergyHelperWidget.H - 2;
+                energyHelper.setBounds(hx, hy);
+                energyHelper.setVisible(true);
+                final int idx = i;
+                final String catId = currentCategory != null ? currentCategory.getRecipeType().getUid().toString() : null;
+                energyHelper.setOnEUtChanged(eu -> {
+                    var field = currentFields.get(idx);
+                    field.setter().accept((double) eu);
+                    updatingFieldsFromDraft = true;
+                    try { numericBoxes.get(idx).setValue(String.valueOf(eu)); }
+                    finally { updatingFieldsFromDraft = false; }
+                    if (catId != null) {
+                        energyHelperStateByCategory.put(catId, new int[]{energyHelper.getTierIdx(), energyHelper.getAmpIdx()});
+                    }
+                    recipeArea.rebuild();
+                });
+                break;
+            }
         }
     }
 
@@ -178,6 +229,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     }
 
     public RecipeArea getRecipeArea() { return recipeArea; }
+    public StackBuilderWidget getStackBuilder() { return stackBuilder; }
+    /** ghost handler 用：StackBuilder の slot 領域 (画面座標)。非表示時 null。 */
+    @Nullable
+    public net.minecraft.client.renderer.Rect2i getStackBuilderArea() {
+        if (!stackBuilder.isVisible()) return null;
+        // init で stackBuilder の位置は確定済み。座標を取り出す helper を提供。
+        return stackBuilder.getSlotRect();
+    }
 
     private void onCategorySelected(IRecipeCategory<?> cat) {
         Credit.LOGGER.info("[CraftPattern] Selected category: {}", cat.getRecipeType().getUid());
@@ -189,7 +248,27 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         lastCategory = cat;
         recipeArea.setCategory(cat, DRAFT_STORE.getOrCreate(cat));
         rebuildNumericFields(recipeArea.getDraft());
-        tagBar.setVisible(recipeArea.getDraft() != null);
+        RecipeDraft draft = recipeArea.getDraft();
+        boolean editable = draft != null;
+        tagBar.setVisible(editable);
+        // StackBuilder：fluid/gas slot を持つ draft のみ表示
+        stackBuilder.setVisible(editable && hasFluidOrGasSlot(draft));
+        // EnergyHelper の per-category 状態を復元
+        if (cat != null) {
+            String catId = cat.getRecipeType().getUid().toString();
+            int[] state = energyHelperStateByCategory.computeIfAbsent(catId, k -> new int[]{1, 0});
+            energyHelper.setState(state[0], state[1]);
+        }
+    }
+
+    private static boolean hasFluidOrGasSlot(RecipeDraft draft) {
+        if (draft == null) return false;
+        for (int i = 0; i < draft.slotCount(); i++) {
+            RecipeDraft.SlotKind k = draft.slotKind(i);
+            if (k == RecipeDraft.SlotKind.FLUID_INPUT  || k == RecipeDraft.SlotKind.FLUID_OUTPUT
+             || k == RecipeDraft.SlotKind.GAS_INPUT    || k == RecipeDraft.SlotKind.GAS_OUTPUT) return true;
+        }
+        return false;
     }
 
     private void toggleCraftingMode() {
@@ -268,14 +347,20 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         renderUnsupportedNotice(g);
         renderNumberLabels(g);
         renderDumpButton(g, mouseX, mouseY);
+        renderSettingsButton(g, mouseX, mouseY);
         tagBar.render(g, mouseX, mouseY);
+        stackBuilder.render(g, mouseX, mouseY);
+        energyHelper.render(g, font, mouseX, mouseY);
 
         if (tabBar != null) {
             CategoryTab hover = tabBar.getHovered(mouseX, mouseY);
             if (hover != null) g.renderTooltip(font, hover.tooltip(), Optional.empty(), mouseX, mouseY);
         }
         recipeArea.renderOverlays(g, mouseX, mouseY);
+        recipeArea.renderUserEditTooltip(g, mouseX, mouseY);
         tagBar.renderTooltip(g, font, mouseX, mouseY);
+        stackBuilder.renderTooltip(g, font, mouseX, mouseY);
+        energyHelper.renderTooltip(g, font, mouseX, mouseY);
         renderTooltip(g, mouseX, mouseY);
 
         if (!ghostCursor.isEmpty()) {
@@ -283,6 +368,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             int gy = mouseY - 8;
             g.renderItem(ghostCursor, gx, gy);
             g.renderItemDecorations(font, ghostCursor, gx, gy);
+        }
+        if (!dragSpec.isEmpty()) {
+            DIV.credit.client.recipe.RecipeArea.renderSpecAt(g, dragSpec, mouseX - 8, mouseY - 8);
         }
     }
 
@@ -304,7 +392,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     private void renderUnsupportedNotice(GuiGraphics g) {
         if (currentCategory == null || recipeArea.getDraft() != null) return;
-        String msg = "Editing not supported for this category";
+        Component msg = Component.translatable("gui.credit.notice.unsupported");
         int tw = font.width(msg);
         int tx = leftPos + (imageWidth - tw) / 2;
         int ty = recipeAreaTop + 2;
@@ -325,11 +413,22 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         dumpX = -1;
         if (recipeArea.getDraft() == null) return;
         dumpX = leftPos + imageWidth - DUMP_W - 2;
-        dumpY = recipeAreaBottom - DUMP_H - 2;
+        // numericFields y = recipeAreaBottom - 12 - 2、その上 + EnergyHelper の上にもう少し余白
+        dumpY = recipeAreaBottom - 12 - 2 - EnergyHelperWidget.H - 4 - DUMP_H - 4;
         boolean hover = mouseX >= dumpX && mouseX < dumpX + DUMP_W
                      && mouseY >= dumpY && mouseY < dumpY + DUMP_H;
         if (hover) g.fill(dumpX - 1, dumpY - 1, dumpX + DUMP_W + 1, dumpY + DUMP_H + 1, 0x66FFFFFF);
         g.blit(DUMP_TEX, dumpX, dumpY, 0, 0, DUMP_W, DUMP_H, DUMP_W, DUMP_H);
+    }
+
+    /** Settings (gear) ボタン：常時表示、画面右上付近。dump とは独立。 */
+    private void renderSettingsButton(GuiGraphics g, int mouseX, int mouseY) {
+        settingsX = leftPos + imageWidth - SETTINGS_W - 2;
+        settingsY = recipeAreaTop + 2;
+        boolean hover = mouseX >= settingsX && mouseX < settingsX + SETTINGS_W
+                     && mouseY >= settingsY && mouseY < settingsY + SETTINGS_H;
+        if (hover) g.fill(settingsX - 1, settingsY - 1, settingsX + SETTINGS_W + 1, settingsY + SETTINGS_H + 1, 0x66FFFFFF);
+        g.blit(SETTINGS_TEX, settingsX, settingsY, 0, 0, SETTINGS_W, SETTINGS_H, SETTINGS_W, SETTINGS_H);
     }
 
     @Override
@@ -354,6 +453,13 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             doDump();
             return true;
         }
+        if (button == 0 && settingsX >= 0
+            && mx >= settingsX && mx < settingsX + SETTINGS_W
+            && my >= settingsY && my < settingsY + SETTINGS_H) {
+            playClick();
+            Minecraft.getInstance().setScreen(new SettingsScreen(this));
+            return true;
+        }
 
         // Tag bar: Ctrl+right-click anywhere on the bar clears input + result
         if (button == 1 && Screen.hasControlDown() && tagBar.isOverBar(mx, my)) {
@@ -374,6 +480,33 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             return true;
         }
 
+        // EnergyHelper (GT 用 tier × amperage)
+        if (energyHelper.mouseClicked(mx, my, button)) {
+            playClick();
+            return true;
+        }
+
+        // StackBuilder の右クリ系（multiplier 操作）は widget 側で処理
+        if (button != 0 && stackBuilder.mouseClicked(mx, my, button)) {
+            playClick();
+            return true;
+        }
+
+        // Drag-from-slot: cursor 空 + 左クリ で source から spec を取得して drag 開始
+        if (button == 0 && ghostCursor.isEmpty()) {
+            // 1. StackBuilder slot から
+            if (stackBuilder.isOverSlot(mx, my) && !stackBuilder.getContent().isEmpty()) {
+                this.dragSpec = stackBuilder.getContent();
+                return true;
+            }
+            // 2. recipe slot から（編集済み）
+            DIV.credit.client.draft.IngredientSpec edited = recipeArea.getEditedSpecAt(mx, my);
+            if (edited != null) {
+                this.dragSpec = edited;
+                return true;
+            }
+        }
+
         if (recipeArea.mouseClicked(mx, my, button, ghostCursor)) return true;
 
         boolean overInvSlot = isOverInventorySlot(mx, my);
@@ -384,6 +517,27 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             ghostCursor = ItemStack.EMPTY;
         }
         return handled;
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int button) {
+        if (button == 0 && !dragSpec.isEmpty()) {
+            // Drop on StackBuilder slot → 転送
+            if (stackBuilder.isOverSlot(mx, my)) {
+                stackBuilder.setContent(dragSpec);
+                playClick();
+            } else {
+                // Drop on recipe slot → 配置（acceptsAt は内部で確認）
+                int slotIdx = recipeArea.findSlotIndexAt(mx, my);
+                if (slotIdx >= 0) {
+                    recipeArea.setSlotIngredient(slotIdx, dragSpec);
+                    playClick();
+                }
+            }
+            dragSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
+            return true;
+        }
+        return super.mouseReleased(mx, my, button);
     }
 
     private boolean isOverInventorySlot(double mx, double my) {
@@ -423,7 +577,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         for (EditBox box : numericBoxes) {
             if (box.isFocused()) return true;
         }
-        return tagBar.isEditBoxFocused();
+        return tagBar.isEditBoxFocused() || stackBuilder.isEditBoxFocused();
     }
 
     @Override

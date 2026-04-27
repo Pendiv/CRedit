@@ -79,7 +79,7 @@ public class PressurizedReactionDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Duration", NumericField.Kind.INT, () -> duration,       v -> duration = (int) v,       1, 1_000_000),
+            new NumericField("Duration", NumericField.Kind.INT, () -> duration,       v -> duration = (int) v,       1, Integer.MAX_VALUE),
             new NumericField("Energy",   NumericField.Kind.INT, () -> energyRequired, v -> energyRequired = (long) v, 0, Integer.MAX_VALUE)
         );
     }
@@ -107,12 +107,11 @@ public class PressurizedReactionDraft implements RecipeDraft {
             GasStackIngredient   gasIng   = IngredientCreatorAccess.gas().from(inGas.isEmpty()
                 ? new GasStack(MekanismGases.HYDROGEN.get(), 1) : inGas);
 
-            // PressurizedReactionRecipe は出力 1 個以上必須。両方空なら preview 用に barrier を出力に。
-            ItemStack outItemForRecipe = outItem;
-            GasStack  outGasForRecipe  = outGas;
-            if (outItemForRecipe.isEmpty() && outGasForRecipe.isEmpty()) {
-                outItemForRecipe = new ItemStack(Items.BARRIER);
-            }
+            // 両出力とも常に非 empty にする。Mek category は空出力を skip するので
+            // placeholder を入れないと slot view 数が変動して index がズレる。
+            ItemStack outItemForRecipe = outItem.isEmpty() ? new ItemStack(Items.BARRIER) : outItem;
+            GasStack  outGasForRecipe  = outGas.isEmpty()
+                ? new GasStack(MekanismGases.HYDROGEN.get(), 1) : outGas;
 
             return new PressurizedReactionIRecipe(
 
