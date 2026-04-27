@@ -214,3 +214,30 @@ tasks.named('jar', Jar).configure {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
+
+// ─── 開発環境向け JAR ──────────────────────────────────────
+// 通常 build → reobfJar により本番（obfuscated）jar が出る。これは MC 実行環境向け。
+// 一方、他 MOD の dev runClient に放り込む場合 deobf 名が必要 → devJar (-dev classifier) を作る。
+//
+// 使い方:
+//   ./gradlew build       → build/libs/credit-1.0.0.jar       (本番、reobf 済み)
+//   ./gradlew devJar      → build/libs/credit-1.0.0-dev.jar   (dev env 用、deobf)
+//   ./gradlew allJars     → 両方ビルド
+tasks.register('devJar', Jar) {
+    dependsOn classes
+    from sourceSets.main.output
+    archiveClassifier = 'dev'
+    manifest {
+        attributes(["Specification-Title"     : mod_id,
+                    "Specification-Vendor"    : mod_authors,
+                    "Specification-Version"   : "1",
+                    "Implementation-Title"    : project.name,
+                    "Implementation-Version"  : project.version,
+                    "Implementation-Vendor"   : mod_authors,
+                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+    }
+}
+
+tasks.register('allJars') {
+    dependsOn 'jar', 'devJar'
+}
