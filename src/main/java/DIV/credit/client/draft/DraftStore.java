@@ -3,9 +3,11 @@ package DIV.credit.client.draft;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.fml.ModList;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -18,6 +20,8 @@ public class DraftStore {
     public enum CraftingVariant { SHAPED, SHAPELESS }
 
     private final Map<String, RecipeDraft> drafts = new HashMap<>();
+    /** MAX persistence で復元待ちの未マテリアライズ draft 状態。getOrCreate で取り出し apply する。 */
+    private final Map<String, CompoundTag> pendingState = new HashMap<>();
     private CraftingVariant craftingVariant = CraftingVariant.SHAPED;
 
     public CraftingVariant getCraftingVariant()             { return craftingVariant; }
@@ -36,13 +40,43 @@ public class DraftStore {
             return existing;
         }
         RecipeDraft fresh = create(cat);
-        if (fresh != null) drafts.put(key, fresh);
+        if (fresh != null) {
+            drafts.put(key, fresh);
+            CompoundTag pending = pendingState.remove(key);
+            if (pending != null) {
+                DIV.credit.client.draft.DraftPersistence.applyTo(fresh, pending);
+            }
+        }
         return fresh;
+    }
+
+    /** すべての draft と未マテリアライズ状態を破棄。MIN モード screen close 時に使う。 */
+    public void clear() {
+        drafts.clear();
+        pendingState.clear();
+    }
+
+    /** MAX persistence の保存対象スナップショット。 */
+    public Map<String, RecipeDraft> snapshotDrafts() {
+        return Collections.unmodifiableMap(drafts);
+    }
+
+    /** まだマテリアライズしていない pending state も保存対象に含めるためのスナップショット。 */
+    public Map<String, CompoundTag> snapshotPending() {
+        return Collections.unmodifiableMap(pendingState);
+    }
+
+    /** 復元時に DraftPersistence から読み込んだ生 NBT をセット。 */
+    public void setPendingState(Map<String, CompoundTag> state) {
+        pendingState.clear();
+        pendingState.putAll(state);
     }
 
     private String keyFor(IRecipeCategory<?> cat) {
         String base = cat.getRecipeType().getUid().toString();
         if (RecipeTypes.CRAFTING.equals(cat.getRecipeType())) {
+            // 共有モード時は variant suffix を付けず単一 entry にする
+            if (DIV.credit.CreditConfig.CRAFTING_SHARE_SLOTS.get()) return base;
             return base + "|" + craftingVariant.name();
         }
         return base;

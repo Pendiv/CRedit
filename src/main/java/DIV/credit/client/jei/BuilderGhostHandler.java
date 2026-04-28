@@ -57,6 +57,17 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
         if (sbArea != null) {
             targets.add(new StackBuilderTarget<>(sbArea, ingredient.getType(), gui));
         }
+        // TagBar の CFG slot も drop ターゲットに（item/fluid/gas 全部受け入れ。option は未設定状態で）
+        Rect2i cfgArea = gui.getTagBarCfgArea();
+        if (cfgArea != null) {
+            targets.add(new TagBarCfgTarget<>(cfgArea, ingredient.getType(), gui));
+        }
+        // TagBar の Result slot も drop ターゲットに（finder mode 起動: item/fluid のみ）
+        Rect2i resultArea = gui.getTagBarResultArea();
+        if (resultArea != null
+            && (testSpec instanceof IngredientSpec.Item || testSpec instanceof IngredientSpec.Fluid)) {
+            targets.add(new TagBarResultTarget<>(resultArea, ingredient.getType(), gui));
+        }
         if (doStart) {
             Credit.LOGGER.info("[CraftPattern] ghost drag offered {} targets ({} rejected by acceptsAt)",
                 targets.size(), rejected);
@@ -109,6 +120,52 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
             Credit.LOGGER.info("[CraftPattern] ghost drag ACCEPT: slot[{}] spec={}",
                 slotIndex, spec.isEmpty() ? "EMPTY" : spec.getClass().getSimpleName());
             if (!spec.isEmpty()) recipeArea.setSlotIngredient(slotIndex, spec);
+        }
+    }
+
+    /** TagBar Result slot への ghost drop target（finder mode 起動）。 */
+    private static final class TagBarResultTarget<I> implements Target<I> {
+        private final Rect2i area;
+        private final IIngredientType<I> type;
+        private final BuilderScreen gui;
+
+        TagBarResultTarget(Rect2i area, IIngredientType<I> type, BuilderScreen gui) {
+            this.area = area;
+            this.type = type;
+            this.gui  = gui;
+        }
+
+        @Override public Rect2i getArea() { return area; }
+
+        @Override
+        public void accept(I ingredient) {
+            IngredientSpec spec = toSpec(type, ingredient);
+            Credit.LOGGER.info("[CraftPattern] ghost drag ACCEPT: tagBarResult spec={}",
+                spec.isEmpty() ? "EMPTY" : spec.getClass().getSimpleName());
+            if (!spec.isEmpty()) gui.getTagBar().setFinderSource(spec);
+        }
+    }
+
+    /** TagBar CFG slot への ghost drop target。 */
+    private static final class TagBarCfgTarget<I> implements Target<I> {
+        private final Rect2i area;
+        private final IIngredientType<I> type;
+        private final BuilderScreen gui;
+
+        TagBarCfgTarget(Rect2i area, IIngredientType<I> type, BuilderScreen gui) {
+            this.area = area;
+            this.type = type;
+            this.gui  = gui;
+        }
+
+        @Override public Rect2i getArea() { return area; }
+
+        @Override
+        public void accept(I ingredient) {
+            IngredientSpec spec = toSpec(type, ingredient);
+            Credit.LOGGER.info("[CraftPattern] ghost drag ACCEPT: tagBarCfg spec={}",
+                spec.isEmpty() ? "EMPTY" : spec.getClass().getSimpleName());
+            if (!spec.isEmpty()) gui.getTagBar().setCfgContent(spec);
         }
     }
 

@@ -113,10 +113,12 @@ public class RecipeArea {
         if (drawable == null) {
             statusMessage = "(no recipes for " + category.getRecipeType().getUid() + ")";
             sampledBoundsCache = new HashMap<>();
+            originalOverlays.clear();
         } else {
             repositionDrawable();
             try { drawable.tick(); } catch (Exception ignored) {}
             sampledBoundsCache = sampleSlotBounds();
+            captureOriginalOverlays(); // updateSlotDisplays が overlay を null/復元するため事前にキャプチャ
             updateSlotDisplays();  // slot ごと: 編集 spec を JEI に native 描画させる / 空はクリア
             logSlotKindMapping();
         }
@@ -251,6 +253,20 @@ public class RecipeArea {
         }
     }
 
+    /** drawable 再構築毎に slot view → original overlay を保存。Tag spec 時のみ null 化、それ以外は復元。 */
+    private final Map<IRecipeSlotView, Object> originalOverlays = new HashMap<>();
+
+    private void captureOriginalOverlays() {
+        originalOverlays.clear();
+        if (drawable == null || OVERLAY_FIELD == null) return;
+        for (IRecipeSlotView v : drawable.getRecipeSlotsView().getSlotViews()) {
+            try {
+                Object orig = OVERLAY_FIELD.get(v);
+                originalOverlays.put(v, orig);
+            } catch (Exception ignored) {}
+        }
+    }
+
     /**
      * 各 slot の displayIngredients を更新：
      * - 編集なし → 空リスト（JEI は背景のみ描画 → カテゴリ固有の空スロット枠が見える）
@@ -271,15 +287,32 @@ public class RecipeArea {
                 ITypedIngredient<?> ti = specToTypedIngredient(im, spec);
                 if (ti != null) displayList = List.of(Optional.of(ti));
             }
+            IRecipeSlotView view = views.get(i);
             try {
-                DISPLAY_INGREDIENTS_FIELD.set(views.get(i), displayList);
+                DISPLAY_INGREDIENTS_FIELD.set(view, displayList);
             } catch (Exception ignored) {}
+            // Tag spec の slot は GT/LdLib の cycler overlay を抑制（毎秒チカチカ防止）。
+            // 非 Tag spec / 空は original overlay を復元（GT/Mek 固有の slot 装飾を尊重）。
+            if (OVERLAY_FIELD != null) {
+                try {
+                    IngredientSpec base = spec.unwrap();
+                    boolean isTag = base instanceof IngredientSpec.Tag
+                                 || base instanceof IngredientSpec.FluidTag;
+                    if (isTag) {
+                        OVERLAY_FIELD.set(view, null);
+                    } else {
+                        OVERLAY_FIELD.set(view, originalOverlays.get(view));
+                    }
+                } catch (Exception ignored) {}
+            }
         }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static ITypedIngredient<?> specToTypedIngredient(mezz.jei.api.runtime.IIngredientManager im, IngredientSpec spec) {
         try {
+            // Configured wrapper は base に unwrap してから JEI ingredient へ
+            if (spec != null) spec = spec.unwrap();
             if (spec instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
                 return im.createTypedIngredient(mezz.jei.api.constants.VanillaTypes.ITEM_STACK, it.stack()).orElse(null);
             }
@@ -331,6 +364,14 @@ public class RecipeArea {
                 if (b == null) continue;
                 sx = b[0]; sy = b[1];
             }
+            // Tag/FluidTag: LdLib widget tree が独立に tag list を cycler 描画してるため、
+            // 我々の name_tag アイコン背後にも cycling item が透けてしまう。
+            // 16x16 の不透明 fill で下層を覆って隠す。それ以外の spec は単一アイテムなので
+            // 我々の icon が自然に上書きするので fill 不要。
+            IngredientSpec base = spec.unwrap();
+            if (base instanceof IngredientSpec.Tag || base instanceof IngredientSpec.FluidTag) {
+                g.fill(sx, sy, sx + 16, sy + 16, 0xFF373737);
+            }
             renderSpec(g, rt, spec, sx, sy);
         }
     }
@@ -364,6 +405,8 @@ public class RecipeArea {
 
     private static void renderSpec(GuiGraphics g, IJeiRuntime rt, IngredientSpec spec, int x, int y) {
         try {
+            // Configured wrapper は base に unwrap してから render
+            if (spec != null) spec = spec.unwrap();
             if (spec instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
                 g.renderItem(it.stack(), x, y);
                 g.renderItemDecorations(Minecraft.getInstance().font, it.stack(), x, y);
@@ -622,17 +665,21 @@ public class RecipeArea {
         return result;
     }
 
-    /** JEI Ghost Drag accept から呼ばれる：指定スロットに spec を配置（型ミスマッチは silently 拒否）。 */
-    public void setSlotIngredient(int slotIndex, IngredientSpec spec) {
-        if (draft == null || slotIndex < 0 || slotIndex >= draft.slotCount()) return;
-        if (!draft.acceptsAt(slotIndex, spec)) return;
+    /**
+     * JEI Ghost Drag accept から呼ばれる：指定スロットに spec を配置。
+     * 戻り値: 配置成功なら true。範囲外/型ミスマッチ等で拒否されたら false。
+     */
+    public boolean setSlotIngredient(int slotIndex, IngredientSpec spec) {
+        if (draft == null || slotIndex < 0 || slotIndex >= draft.slotCount()) return false;
+        if (!draft.acceptsAt(slotIndex, spec)) return false;
         draft.setSlot(slotIndex, spec);
         rebuildDrawable();
+        return true;
     }
 
     /** 後方互換：ItemStack 渡し → spec 変換 → 配置。 */
-    public void setSlotItem(int slotIndex, ItemStack stack) {
-        setSlotIngredient(slotIndex, ingredientFromCursor(stack));
+    public boolean setSlotItem(int slotIndex, ItemStack stack) {
+        return setSlotIngredient(slotIndex, ingredientFromCursor(stack));
     }
 
     private int findSlotIndex(IRecipeSlotDrawable target) {

@@ -97,7 +97,37 @@ public class CraftingDraft implements RecipeDraft {
     public String emit(String recipeId) {
         String outJs = RecipeDraft.formatIngredientWithCount(slots[IDX_OUTPUT]);
         if (outJs == null) return null;
-        return mode == Mode.SHAPED ? emitShaped(recipeId, outJs) : emitShapeless(recipeId, outJs);
+        String body = mode == Mode.SHAPED ? emitShaped(recipeId, outJs) : emitShapeless(recipeId, outJs);
+        return appendOptionModifiers(body);
+    }
+
+    /**
+     * 入力スロットに ItemOption.VANILLA_DAMAGE / VANILLA_KEEP が乗ってたら
+     * 末尾の `;\n` の前に `.damageIngredient(...)` / `.keepIngredient(...)` を挿入。
+     */
+    private String appendOptionModifiers(String body) {
+        if (body == null) return null;
+        StringBuilder mods = new StringBuilder();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < INPUT_COUNT; i++) {
+            IngredientSpec spec = slots[IDX_INPUT_0 + i];
+            if (spec == null || spec.isEmpty()) continue;
+            IngredientSpec.ItemOption opt = spec.option();
+            if (opt != IngredientSpec.ItemOption.VANILLA_DAMAGE
+             && opt != IngredientSpec.ItemOption.VANILLA_KEEP) continue;
+            String js = RecipeDraft.formatIngredientString(spec);
+            if (js == null) continue;
+            String key = opt + "|" + js;
+            if (!seen.add(key)) continue;
+            String method = (opt == IngredientSpec.ItemOption.VANILLA_DAMAGE)
+                ? "damageIngredient" : "keepIngredient";
+            mods.append("\n         .").append(method).append("(").append(js).append(")");
+        }
+        if (mods.length() == 0) return body;
+        // body は "...id('...');\n" 形式。`;\n` の手前に挿入。
+        int semi = body.lastIndexOf(";\n");
+        if (semi < 0) return body + mods;
+        return body.substring(0, semi) + mods + body.substring(semi);
     }
 
     private String emitShaped(String recipeId, String outJs) {

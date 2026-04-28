@@ -97,7 +97,17 @@ public class EnergyHelperWidget {
     }
 
     private void notifyChange() {
-        if (onEUtChanged != null) onEUtChanged.accept(currentEUt());
+        if (onEUtChanged == null) return;
+        try {
+            onEUtChanged.accept(currentEUt());
+        } catch (Exception ex) {
+            // 古い callback が空 list を参照する等のケース（カテゴリ遷移後の残留 click 等）。
+            // クラッシュさせず、widget を畳んでログだけ残す。
+            org.slf4j.LoggerFactory.getLogger("credit").warn(
+                "[CraftPattern] EnergyHelper callback failed; hiding widget. ({})", ex.toString());
+            this.visible = false;
+            this.onEUtChanged = null;
+        }
     }
 
     public void render(GuiGraphics g, Font font, int mouseX, int mouseY) {

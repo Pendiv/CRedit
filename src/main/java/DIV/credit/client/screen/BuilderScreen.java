@@ -57,6 +57,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     /** Static so drafts and last-selected category persist across screen open/close (until game exit). */
     private static final DraftStore DRAFT_STORE = new DraftStore();
     private static IRecipeCategory<?> lastCategory;
+    /** MAX persistence: ゲームセッションで一度だけファイルから復元する。 */
+    private static boolean persistenceLoaded = false;
+
+    // Undo state
+    private long lastSnapshotHash = 0;
+    /** 直近で hash check を実行した時刻。編集の有無に関わらず check 自体を debounce する。 */
+    private long lastSnapshotCheckMs = 0;
+    private static final long SNAPSHOT_DEBOUNCE_MS = 500;
 
     private CategoryTabBar tabBar;
     private final RecipeArea recipeArea = new RecipeArea();
@@ -69,6 +77,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private DIV.credit.client.draft.IngredientSpec ghostSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
     /** drag-from-slot 状態。空でない時、cursor に追従して描画 + release で StackBuilder 等に転送。 */
     private DIV.credit.client.draft.IngredientSpec dragSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
+    /** drag 開始元が CFG slot か。drop 成功時のみ CFG をクリアするため。 */
+    private boolean dragFromCfg = false;
     private IRecipeCategory<?> currentCategory;
 
     private int recipeAreaTop;
@@ -97,9 +107,24 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         return new BuilderScreen(new CreditBuilderMenu(player.getInventory()), player.getInventory());
     }
 
+    /** Settings の「編集データ削除」から呼ばれる。in-memory 状態を全クリア。 */
+    public static void clearAllDraftData() {
+        DRAFT_STORE.clear();
+        energyHelperStateByCategory.clear();
+        lastCategory = null;
+        Credit.LOGGER.info("[CraftPattern] Cleared all draft data (DRAFT_STORE + energy state + lastCategory)");
+    }
+
     @Override
     protected void init() {
         super.init();
+        // MAX persistence: ゲームセッションで一度だけファイルから復元
+        if (!persistenceLoaded) {
+            persistenceLoaded = true;
+            if (DIV.credit.CreditConfig.EDIT_PERSISTENCE.get() == DIV.credit.CreditConfig.EditPersistence.MAX) {
+                DIV.credit.client.draft.DraftPersistence.load(DRAFT_STORE);
+            }
+        }
         int minInventoryTop = TOP_MARGIN + TAB_AREA_HEIGHT + TagBar.H + 10;
         this.topPos = Math.max(minInventoryTop, this.height - this.imageHeight - BOTTOM_MARGIN);
 
@@ -137,10 +162,24 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         if (tabBar != null && tabBar.getSelected() != null) {
             applyCategory(tabBar.getSelected());
         }
+
+        // Undo: 初期スナップショットを push (空でも or 既存履歴の続きでも OK)
+        // 履歴は世界セッション中保持されるので、再 open 時は新しい初期 snapshot として積む
+        long h = DIV.credit.client.undo.UndoHistory.computeHash(DRAFT_STORE, this);
+        if (h != lastSnapshotHash || DIV.credit.client.undo.UndoHistory.INSTANCE.size() == 0) {
+            DIV.credit.client.undo.UndoHistory.INSTANCE.push(
+                DIV.credit.client.undo.Snapshot.capture(DRAFT_STORE, this));
+            lastSnapshotHash = h;
+            lastSnapshotCheckMs = System.currentTimeMillis();
+        }
     }
 
     /** Draft の numericFields() に基づいて EditBox を動的生成。 */
     private void rebuildNumericFields(@Nullable RecipeDraft draft) {
+        // EnergyHelper は前カテゴリの callback が空 list を参照するとクラッシュするので、
+        // 何より先に hide + callback クリア（draft == null や empty fields の早期 return より前）
+        energyHelper.setVisible(false);
+        energyHelper.setOnEUtChanged(null);
         for (EditBox box : numericBoxes) removeWidget(box);
         numericBoxes.clear();
         currentFields.clear();
@@ -173,8 +212,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         }
 
         // EnergyHelper: GT 電気機械（usesGtElectricity）かつ EUt フィールドがある時のみ表示
-        energyHelper.setVisible(false);
-        if (draft == null || !draft.usesGtElectricity()) return;
+        // (visible/callback は冒頭でクリア済み)
+        if (!draft.usesGtElectricity()) return;
         for (int i = 0; i < currentFields.size(); i++) {
             if ("EUt".equals(currentFields.get(i).label())) {
                 EditBox eutBox = numericBoxes.get(i);
@@ -230,12 +269,50 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     public RecipeArea getRecipeArea() { return recipeArea; }
     public StackBuilderWidget getStackBuilder() { return stackBuilder; }
+    public DIV.credit.client.tag.TagBar getTagBar() { return tagBar; }
+
+    // --- Undo snapshot 用 公開アクセス ---
+    public java.util.Map<String, int[]> getEnergyHelperStateMap() {
+        return energyHelperStateByCategory;
+    }
+    @Nullable
+    public String getCurrentCategoryUid() {
+        return currentCategory == null ? null : currentCategory.getRecipeType().getUid().toString();
+    }
+    /** Snapshot apply 時：UID 一致するカテゴリへ tab 切替。一致なければ現状維持で applyCategory のみ。 */
+    public void restoreSelectedCategory(@Nullable String uid) {
+        if (tabBar == null) return;
+        if (uid != null && (currentCategory == null
+            || !uid.equals(currentCategory.getRecipeType().getUid().toString()))) {
+            IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+            if (rt == null) return;
+            var cats = rt.getRecipeManager().createRecipeCategoryLookup().get().toList();
+            for (IRecipeCategory<?> c : cats) {
+                if (uid.equals(c.getRecipeType().getUid().toString())) {
+                    tabBar.select(c); // → onCategorySelected → applyCategory
+                    return;
+                }
+            }
+        }
+        // 同じ category だった場合も再描画（draft 状態が変わってる）
+        if (currentCategory != null) applyCategory(currentCategory);
+    }
     /** ghost handler 用：StackBuilder の slot 領域 (画面座標)。非表示時 null。 */
     @Nullable
     public net.minecraft.client.renderer.Rect2i getStackBuilderArea() {
         if (!stackBuilder.isVisible()) return null;
         // init で stackBuilder の位置は確定済み。座標を取り出す helper を提供。
         return stackBuilder.getSlotRect();
+    }
+    /** ghost handler 用：TagBar の CFG slot 領域 (画面座標)。非表示時 null。 */
+    @Nullable
+    public net.minecraft.client.renderer.Rect2i getTagBarCfgArea() {
+        return tagBar.getCfgSlotRect();
+    }
+    /** ghost handler 用：TagBar の Result slot 領域 (画面座標)。非表示時 null。 */
+    @Nullable
+    public net.minecraft.client.renderer.Rect2i getTagBarResultArea() {
+        return tagBar.getResultSlotRect();
     }
 
     private void onCategorySelected(IRecipeCategory<?> cat) {
@@ -251,6 +328,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         RecipeDraft draft = recipeArea.getDraft();
         boolean editable = draft != null;
         tagBar.setVisible(editable);
+        // CFG dropdown options はカテゴリ namespace で決まる（vanilla/gtceu/その他）。
+        // CFG slot に何か乗ってて新カテゴリで option が無効なら NONE に戻る。
+        tagBar.setCategoryNamespace(cat != null ? cat.getRecipeType().getUid().getNamespace() : null);
         // StackBuilder：fluid/gas slot を持つ draft のみ表示
         stackBuilder.setVisible(editable && hasFluidOrGasSlot(draft));
         // EnergyHelper の per-category 状態を復元
@@ -372,6 +452,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         if (!dragSpec.isEmpty()) {
             DIV.credit.client.recipe.RecipeArea.renderSpecAt(g, dragSpec, mouseX - 8, mouseY - 8);
         }
+        // dropdown は最前面（tooltip より下、cursor より下）
+        tagBar.renderOverlay(g, mouseX, mouseY);
     }
 
     private void renderModeToggle(GuiGraphics g, int mouseX, int mouseY) {
@@ -381,7 +463,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             ? "Shaped" : "Shapeless") + "]";
         toggleW = font.width(label) + 4;
         toggleH = font.lineHeight + 2;
-        toggleX = leftPos + imageWidth - toggleW - 2;
+        // Settings ボタン (右端) の左に重ならないよう余白を空けて配置
+        toggleX = leftPos + imageWidth - toggleW - SETTINGS_W - 6;
         toggleY = recipeAreaTop + 2;
         boolean hover = mouseX >= toggleX && mouseX < toggleX + toggleW
                      && mouseY >= toggleY && mouseY < toggleY + toggleH;
@@ -435,6 +518,24 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     protected void containerTick() {
         super.containerTick();
         recipeArea.tick();
+        maybeCaptureSnapshot();
+    }
+
+    /**
+     * 500ms 毎に 1 回だけ hash 比較を実行し、diff があれば snapshot を push。
+     * 編集の有無に関わらず check 間隔を debounce することで毎 tick の hash compute を回避。
+     * Settings で undo 無効の時は snapshot しない。
+     */
+    private void maybeCaptureSnapshot() {
+        if (!DIV.credit.CreditConfig.UNDO_ENABLED.get()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastSnapshotCheckMs < SNAPSHOT_DEBOUNCE_MS) return;
+        lastSnapshotCheckMs = now;
+        long h = DIV.credit.client.undo.UndoHistory.computeHash(DRAFT_STORE, this);
+        if (h == lastSnapshotHash) return;
+        DIV.credit.client.undo.UndoHistory.INSTANCE.push(
+            DIV.credit.client.undo.Snapshot.capture(DRAFT_STORE, this));
+        lastSnapshotHash = h;
     }
 
     @Override
@@ -473,10 +574,37 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             playClick();
             return true;
         }
-        // Tag bar result slot pickup → ghost cursor
-        if (button == 0 && tagBar.isOverResultSlot(mx, my)) {
+        // Tag bar result slot: Shift+右クリで finder source クリア
+        if (button == 1 && Screen.hasShiftDown() && tagBar.isOverResultSlot(mx, my)
+            && !tagBar.getFinderSource().isEmpty()) {
+            tagBar.setFinderSource(DIV.credit.client.draft.IngredientSpec.EMPTY);
+            playClick();
+            return true;
+        }
+        // Tag bar result slot: finder アクティブ時はそちら優先
+        if (tagBar.handleFinderClick(mx, my, button)) {
+            playClick();
+            return true;
+        }
+        // Tag bar result slot pickup → ghost cursor (finder 非アクティブ時のみ)
+        if (button == 0 && tagBar.isOverResultSlot(mx, my) && tagBar.getFinderSource().isEmpty()) {
             ItemStack r = tagBar.getResult();
             this.ghostCursor = r.isEmpty() ? ItemStack.EMPTY : r.copy();
+            return true;
+        }
+        // Tag bar CFG slot: Shift+右クリで明示クリア。プレーン右クリは何もしない（誤クリック防止）。
+        if (button == 1 && Screen.hasShiftDown() && tagBar.isOverCfgSlot(mx, my)) {
+            tagBar.setCfgContent(DIV.credit.client.draft.IngredientSpec.EMPTY);
+            playClick();
+            return true;
+        }
+        if (button == 1 && tagBar.isOverCfgSlot(mx, my)) {
+            // プレーン右クリは消費してクリア処理を飲む（dropdown 開閉等にも繋がない）
+            return true;
+        }
+        // Dropdown のクリック処理（cfg 非空時のみ反応）
+        if (tagBar.handleDropdownClick(mx, my, button)) {
+            playClick();
             return true;
         }
 
@@ -497,12 +625,21 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             // 1. StackBuilder slot から
             if (stackBuilder.isOverSlot(mx, my) && !stackBuilder.getContent().isEmpty()) {
                 this.dragSpec = stackBuilder.getContent();
+                this.dragFromCfg = false;
                 return true;
             }
-            // 2. recipe slot から（編集済み）
+            // 2. TagBar CFG slot から
+            // CFG は drop 成功で初めてクリアする（drop 失敗時はアイテムを失わない）
+            if (tagBar.isOverCfgSlot(mx, my) && !tagBar.getCfgContent().isEmpty()) {
+                this.dragSpec = tagBar.getCfgContent();
+                this.dragFromCfg = true;
+                return true;
+            }
+            // 3. recipe slot から（編集済み）
             DIV.credit.client.draft.IngredientSpec edited = recipeArea.getEditedSpecAt(mx, my);
             if (edited != null) {
                 this.dragSpec = edited;
+                this.dragFromCfg = false;
                 return true;
             }
         }
@@ -522,19 +659,42 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
         if (button == 0 && !dragSpec.isEmpty()) {
-            // Drop on StackBuilder slot → 転送
+            // 「他の場所」に正常に置けたか。CFG → CFG 同一スロットは「移動成功」ではない。
+            boolean placedElsewhere = false;
             if (stackBuilder.isOverSlot(mx, my)) {
                 stackBuilder.setContent(dragSpec);
+                placedElsewhere = true;
                 playClick();
-            } else {
-                // Drop on recipe slot → 配置（acceptsAt は内部で確認）
-                int slotIdx = recipeArea.findSlotIndexAt(mx, my);
-                if (slotIdx >= 0) {
-                    recipeArea.setSlotIngredient(slotIdx, dragSpec);
+            } else if (tagBar.isOverCfgSlot(mx, my)) {
+                // CFG → CFG 同一なら no-op（dragFromCfg なので setCfgContent も実質変化なし）
+                if (!dragFromCfg) {
+                    tagBar.setCfgContent(dragSpec);
+                    placedElsewhere = true;
                     playClick();
                 }
+            } else if (tagBar.isOverResultSlot(mx, my)) {
+                // Result slot に drop → finder mode 起動（item/fluid のみ受理）
+                tagBar.setFinderSource(dragSpec);
+                if (!tagBar.getFinderSource().isEmpty()) {
+                    placedElsewhere = true;
+                    playClick();
+                }
+            } else {
+                int slotIdx = recipeArea.findSlotIndexAt(mx, my);
+                if (slotIdx >= 0) {
+                    boolean ok = recipeArea.setSlotIngredient(slotIdx, dragSpec);
+                    if (ok) {
+                        placedElsewhere = true;
+                        playClick();
+                    }
+                }
+            }
+            // CFG 由来 + 他所に成功 → 元 CFG をクリア。失敗時は触らずアイテム保持。
+            if (dragFromCfg && placedElsewhere) {
+                tagBar.setCfgContent(DIV.credit.client.draft.IngredientSpec.EMPTY);
             }
             dragSpec = DIV.credit.client.draft.IngredientSpec.EMPTY;
+            dragFromCfg = false;
             return true;
         }
         return super.mouseReleased(mx, my, button);
@@ -558,6 +718,13 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Ctrl+Z: undo / Ctrl+Shift+Z: redo / Ctrl+Y: redo (両対応)
+        // GLFW: Z=90, Y=89, MOD_CONTROL=2, MOD_SHIFT=1
+        if ((modifiers & 2) != 0) {
+            if (keyCode == 90 && (modifiers & 1) == 0) return doUndo();
+            if (keyCode == 90 && (modifiers & 1) != 0) return doRedo();
+            if (keyCode == 89) return doRedo();
+        }
         // While any text field is focused, swallow container shortcuts (E to close, Q to drop,
         // 1-9 hotbar swap, middle-click pick) so they don't trigger while typing.
         // ESC and editing keys (arrows, backspace, etc.) propagate normally.
@@ -571,6 +738,29 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private boolean doUndo() {
+        if (!DIV.credit.CreditConfig.UNDO_ENABLED.get()) return true;
+        DIV.credit.client.undo.Snapshot prev = DIV.credit.client.undo.UndoHistory.INSTANCE.undo();
+        if (prev == null) return true; // history empty: 飲んで終わり
+        prev.applyTo(DRAFT_STORE, this);
+        // 直後の tick で再 capture しないよう hash を更新
+        lastSnapshotHash = DIV.credit.client.undo.UndoHistory.computeHash(DRAFT_STORE, this);
+        lastSnapshotCheckMs = System.currentTimeMillis();
+        playClick();
+        return true;
+    }
+
+    private boolean doRedo() {
+        if (!DIV.credit.CreditConfig.UNDO_ENABLED.get()) return true;
+        DIV.credit.client.undo.Snapshot next = DIV.credit.client.undo.UndoHistory.INSTANCE.redo();
+        if (next == null) return true;
+        next.applyTo(DRAFT_STORE, this);
+        lastSnapshotHash = DIV.credit.client.undo.UndoHistory.computeHash(DRAFT_STORE, this);
+        lastSnapshotCheckMs = System.currentTimeMillis();
+        playClick();
+        return true;
     }
 
     private boolean isAnyTextFieldFocused() {
@@ -597,5 +787,16 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        var mode = DIV.credit.CreditConfig.EDIT_PERSISTENCE.get();
+        switch (mode) {
+            case MIN -> DRAFT_STORE.clear();
+            case MAX -> DIV.credit.client.draft.DraftPersistence.save(DRAFT_STORE);
+            case NORMAL -> {} // keep in-memory until game exits
+        }
     }
 }

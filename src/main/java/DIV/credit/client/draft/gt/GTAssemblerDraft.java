@@ -8,7 +8,6 @@ import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import mezz.jei.api.recipe.RecipeType;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
@@ -134,43 +133,39 @@ public class GTAssemblerDraft implements RecipeDraft {
     @Override
     public String emit(String recipeId) {
         IngredientSpec out = slots[IDX_ITEM_OUTPUT];
-        String outJs = formatGtItem(out);
+        String outJs = GTEmitFormat.formatItem(out);
         if (outJs == null) return null;
 
-        List<String> itemInputs = new ArrayList<>();
+        List<String> itemInputs    = new ArrayList<>();
+        List<String> notConsumable = new ArrayList<>();
         for (int i = 0; i < ITEM_INPUT_COUNT; i++) {
-            String s = formatGtItem(slots[i]);
-            if (s != null) itemInputs.add(s);
+            String s = GTEmitFormat.formatItem(slots[i]);
+            if (s == null) continue;
+            if (GTEmitFormat.isCatalyst(slots[i])) notConsumable.add(s);
+            else                                   itemInputs.add(s);
         }
-        if (itemInputs.isEmpty()) return null;
+        if (itemInputs.isEmpty() && notConsumable.isEmpty()) return null;
 
         StringBuilder sb = new StringBuilder();
         sb.append("    event.recipes.gtceu.assembler('").append(recipeId).append("')\n");
-        sb.append("        .itemInputs(").append(String.join(", ", itemInputs)).append(")\n");
-        IngredientSpec fluid = slots[IDX_FLUID_INPUT];
-        if (fluid instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.FLUID.getKey(fl.stack().getFluid());
-            sb.append("        .inputFluids(Fluid.of('").append(rl).append("', ").append(fl.stack().getAmount()).append("))\n");
-        } else if (fluid instanceof IngredientSpec.FluidTag ftag && ftag.tagId() != null) {
-            sb.append("        .inputFluids('#").append(ftag.tagId()).append(" ").append(ftag.amount()).append("')\n");
+        if (!itemInputs.isEmpty()) {
+            sb.append("        .itemInputs(").append(String.join(", ", itemInputs)).append(")\n");
         }
-        sb.append("        .itemOutputs(").append(outJs).append(")\n");
+        String fluidJs = GTEmitFormat.formatFluid(slots[IDX_FLUID_INPUT]);
+        if (fluidJs != null) {
+            sb.append("        .inputFluids(").append(fluidJs).append(")\n");
+        }
+        if (GTEmitFormat.isChance(out)) {
+            sb.append("        .chancedOutput(").append(outJs).append(", ")
+              .append(GTEmitFormat.chanceArgs(out)).append(")\n");
+        } else {
+            sb.append("        .itemOutputs(").append(outJs).append(")\n");
+        }
+        for (String nc : notConsumable) {
+            sb.append("        .notConsumable(").append(nc).append(")\n");
+        }
         sb.append("        .duration(").append(duration).append(")\n");
         sb.append("        .EUt(").append(EUt).append(");\n");
         return sb.toString();
-    }
-
-    /** GT KubeJS 'Nx id' / '#tag' 短形。 */
-    private static String formatGtItem(IngredientSpec s) {
-        if (s == null || s.isEmpty()) return null;
-        int c = Math.max(1, s.count());
-        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            return c <= 1 ? "'" + rl + "'" : "'" + c + "x " + rl + "'";
-        }
-        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            return c <= 1 ? "'#" + tg.tagId() + "'" : "'" + c + "x #" + tg.tagId() + "'";
-        }
-        return null;
     }
 }

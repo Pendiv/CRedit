@@ -22,6 +22,56 @@ public interface IngredientSpec {
     /** 上限（item=64, fluid=16000 等）。 */
     default int maxCount()      { return MAX_COUNT_DEFAULT; }
 
+    /** CFG_SLOT 設定。デフォルト NONE。Configured wrapper のみ非 NONE。 */
+    default ItemOption option() { return ItemOption.NONE; }
+    /** option を変えた copy。base 型は維持。 */
+    default IngredientSpec withOption(ItemOption opt) {
+        if (opt == null || opt == ItemOption.NONE) return unwrap();
+        return new Configured(unwrap(), opt);
+    }
+    /** Configured 解除。それ以外は this。 */
+    default IngredientSpec unwrap() { return this; }
+
+    /**
+     * CFG_SLOT で適用できる挙動オプション。
+     * - VANILLA_DAMAGE / VANILLA_KEEP : minecraft namespace 用
+     * - GT_CATALYST / GT_CHANCE        : gtceu namespace 用（CHANCE は output 限定）
+     */
+    enum ItemOption {
+        NONE,
+        VANILLA_DAMAGE,
+        VANILLA_KEEP,
+        GT_CATALYST,
+        GT_CHANCE
+    }
+
+    /**
+     * ItemOption を別 spec の上に被せる wrapper。各クエリは base に委譲。
+     * GT_CHANCE 用に 1000分率の chance と tierBoost を保持（他 option では無視）。
+     * デフォルトは chance=1000 (100%), boost=0。
+     */
+    record Configured(IngredientSpec base, ItemOption opt, int chanceMille, int tierBoost)
+            implements IngredientSpec {
+        public Configured(IngredientSpec base, ItemOption opt) {
+            this(base, opt, 1000, 0);
+        }
+        @Override public boolean isEmpty()       { return base.isEmpty(); }
+        @Override public int     count()         { return base.count(); }
+        @Override public int     incrementStep() { return base.incrementStep(); }
+        @Override public int     maxCount()      { return base.maxCount(); }
+        @Override public ItemOption option()     { return opt; }
+        @Override public IngredientSpec unwrap() { return base; }
+        @Override public IngredientSpec withOption(ItemOption o) {
+            if (o == null || o == ItemOption.NONE) return base;
+            return new Configured(base, o, chanceMille, tierBoost); // 値を維持
+        }
+        public Configured withChance(int newChanceMille, int newTierBoost) {
+            return new Configured(base, opt,
+                Math.max(0, Math.min(1000, newChanceMille)),
+                Math.max(0, newTierBoost));
+        }
+    }
+
     record Item(ItemStack stack) implements IngredientSpec {
         @Override public boolean isEmpty() { return stack.isEmpty(); }
         @Override public int     count()   { return stack.getCount(); }
@@ -84,6 +134,10 @@ public interface IngredientSpec {
     }
 
     static IngredientSpec withCount(IngredientSpec s, int newCount) {
+        // Configured は base の量を変えて再 wrap（option 維持）
+        if (s instanceof Configured c) {
+            return new Configured(withCount(c.base(), newCount), c.opt());
+        }
         int n = Math.max(1, Math.min(s.maxCount(), newCount));
         if (s instanceof Item it && !it.stack().isEmpty()) {
             ItemStack copy = it.stack().copy();

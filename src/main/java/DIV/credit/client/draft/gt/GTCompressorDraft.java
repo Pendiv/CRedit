@@ -7,12 +7,10 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import mezz.jei.api.recipe.RecipeType;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Recipe;
 
 import java.util.List;
@@ -97,27 +95,28 @@ public class GTCompressorDraft implements RecipeDraft {
 
     @Override
     public String emit(String recipeId) {
-        String inJs  = formatGtIngredient(slots[IDX_INPUT]);
-        String outJs = formatGtIngredient(slots[IDX_OUTPUT]);
+        IngredientSpec in  = slots[IDX_INPUT];
+        IngredientSpec out = slots[IDX_OUTPUT];
+        String inJs  = GTEmitFormat.formatItem(in);
+        String outJs = GTEmitFormat.formatItem(out);
         if (inJs == null || outJs == null) return null;
-        return "    event.recipes.gtceu.compressor('" + recipeId + "')\n"
-            + "        .itemInputs(" + inJs + ")\n"
-            + "        .itemOutputs(" + outJs + ")\n"
-            + "        .duration(" + duration + ")\n"
-            + "        .EUt(" + EUt + ");\n";
-    }
-
-    /** GT KubeJS の `'Nx id'` ショートハンド書式。Item / Tag 共通。 */
-    private static String formatGtIngredient(IngredientSpec s) {
-        if (s == null || s.isEmpty()) return null;
-        int c = Math.max(1, s.count());
-        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            return c <= 1 ? "'" + rl + "'" : "'" + c + "x " + rl + "'";
+        StringBuilder sb = new StringBuilder();
+        sb.append("    event.recipes.gtceu.compressor('").append(recipeId).append("')\n");
+        if (GTEmitFormat.isCatalyst(in)) {
+            // 入力 1 つしかない compressor で catalyst だと recipe として成立しないが、
+            // ユーザー指定通り emit する（KubeJS 側でエラーになるなら user の判断）
+            sb.append("        .notConsumable(").append(inJs).append(")\n");
+        } else {
+            sb.append("        .itemInputs(").append(inJs).append(")\n");
         }
-        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            return c <= 1 ? "'#" + tg.tagId() + "'" : "'" + c + "x #" + tg.tagId() + "'";
+        if (GTEmitFormat.isChance(out)) {
+            sb.append("        .chancedOutput(").append(outJs).append(", ")
+              .append(GTEmitFormat.chanceArgs(out)).append(")\n");
+        } else {
+            sb.append("        .itemOutputs(").append(outJs).append(")\n");
         }
-        return null;
+        sb.append("        .duration(").append(duration).append(")\n");
+        sb.append("        .EUt(").append(EUt).append(");\n");
+        return sb.toString();
     }
 }

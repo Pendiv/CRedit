@@ -260,20 +260,51 @@ public final class GenericDraft implements RecipeDraft {
         return emitCommentSkeleton(recipeId);
     }
 
-    /** GT KubeJS: event.recipes.gtceu.<path>(id).itemInputs(...).inputFluids(...).itemOutputs(...).outputFluids(...).duration(...).EUt(...) */
+    /**
+     * GT KubeJS: event.recipes.gtceu.<path>(id)
+     *   .itemInputs(...) .inputFluids(...) .itemOutputs(...) .outputFluids(...)
+     *   [.notConsumable(catalyst)]   <- GT_CATALYST 入力
+     *   [.chancedOutput(stack, c, b)]<- GT_CHANCE 出力 (1000分率→×10)
+     *   .duration(...) .EUt(...) [.addData(k,v) ...]
+     */
     private String emitGt(String recipeId) {
-        java.util.List<String> itemIn = new java.util.ArrayList<>();
-        java.util.List<String> fluidIn = new java.util.ArrayList<>();
-        java.util.List<String> itemOut = new java.util.ArrayList<>();
-        java.util.List<String> fluidOut = new java.util.ArrayList<>();
+        java.util.List<String> itemIn         = new java.util.ArrayList<>();
+        java.util.List<String> fluidIn        = new java.util.ArrayList<>();
+        java.util.List<String> itemOut        = new java.util.ArrayList<>();
+        java.util.List<String> fluidOut       = new java.util.ArrayList<>();
+        java.util.List<String> notConsumable  = new java.util.ArrayList<>();
+        java.util.List<String> chancedItemOut = new java.util.ArrayList<>();
+        java.util.List<String> chancedFlOut   = new java.util.ArrayList<>();
         for (int i = 0; i < slots.length; i++) {
             IngredientSpec s = slots[i];
             if (s.isEmpty()) continue;
+            boolean catalyst = DIV.credit.client.draft.gt.GTEmitFormat.isCatalyst(s);
+            boolean chance   = DIV.credit.client.draft.gt.GTEmitFormat.isChance(s);
             switch (kinds[i]) {
-                case ITEM_INPUT -> { String f = formatGtItem(s); if (f != null) itemIn.add(f); }
-                case ITEM_OUTPUT -> { String f = formatGtItem(s); if (f != null) itemOut.add(f); }
-                case FLUID_INPUT -> { String f = formatGtFluid(s); if (f != null) fluidIn.add(f); }
-                case FLUID_OUTPUT -> { String f = formatGtFluid(s); if (f != null) fluidOut.add(f); }
+                case ITEM_INPUT -> {
+                    String f = DIV.credit.client.draft.gt.GTEmitFormat.formatItem(s);
+                    if (f == null) break;
+                    if (catalyst) notConsumable.add(f);
+                    else          itemIn.add(f);
+                }
+                case ITEM_OUTPUT -> {
+                    String f = DIV.credit.client.draft.gt.GTEmitFormat.formatItem(s);
+                    if (f == null) break;
+                    if (chance) chancedItemOut.add(f + ", "
+                        + DIV.credit.client.draft.gt.GTEmitFormat.chanceArgs(s));
+                    else        itemOut.add(f);
+                }
+                case FLUID_INPUT -> {
+                    String f = DIV.credit.client.draft.gt.GTEmitFormat.formatFluid(s);
+                    if (f != null) fluidIn.add(f);
+                }
+                case FLUID_OUTPUT -> {
+                    String f = DIV.credit.client.draft.gt.GTEmitFormat.formatFluid(s);
+                    if (f == null) break;
+                    if (chance) chancedFlOut.add(f + ", "
+                        + DIV.credit.client.draft.gt.GTEmitFormat.chanceArgs(s));
+                    else        fluidOut.add(f);
+                }
                 default -> {}  // gas は GT recipe には基本ないので無視
             }
         }
@@ -287,6 +318,9 @@ public final class GenericDraft implements RecipeDraft {
         if (!fluidIn.isEmpty())  sb.append("        .inputFluids(").append(String.join(", ", fluidIn)).append(")\n");
         if (!itemOut.isEmpty())  sb.append("        .itemOutputs(").append(String.join(", ", itemOut)).append(")\n");
         if (!fluidOut.isEmpty()) sb.append("        .outputFluids(").append(String.join(", ", fluidOut)).append(")\n");
+        for (String nc : notConsumable)   sb.append("        .notConsumable(").append(nc).append(")\n");
+        for (String c  : chancedItemOut)  sb.append("        .chancedOutput(").append(c).append(")\n");
+        for (String c  : chancedFlOut)    sb.append("        .chancedFluidOutput(").append(c).append(")\n");
         sb.append("        .duration(").append(durationValue).append(")\n");
         sb.append("        .EUt(").append(eutValue).append(")");
         // 既知の data パラメータを named method として追加
@@ -300,32 +334,6 @@ public final class GenericDraft implements RecipeDraft {
         }
         sb.append(";\n");
         return sb.toString();
-    }
-
-    /** GT 用 item 表記: "Nx ns:path" or "ns:path"。Tag は "Nx #ns:path"。 */
-    private static String formatGtItem(IngredientSpec s) {
-        int c = Math.max(1, s.count());
-        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            return c <= 1 ? "'" + rl + "'" : "'" + c + "x " + rl + "'";
-        }
-        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            return c <= 1 ? "'#" + tg.tagId() + "'" : "'" + c + "x #" + tg.tagId() + "'";
-        }
-        return null;
-    }
-
-    /** GT 用 fluid 表記: Fluid.of('ns:path', amount) or Fluid.of('#ns:tag', amount)。 */
-    private static String formatGtFluid(IngredientSpec s) {
-        if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
-            FluidStack fs = fl.stack();
-            ResourceLocation rl = BuiltInRegistries.FLUID.getKey(fs.getFluid());
-            return "Fluid.of('" + rl + "', " + fs.getAmount() + ")";
-        }
-        if (s instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
-            return "Fluid.of('#" + ft.tagId() + "', " + ft.amount() + ")";
-        }
-        return null;
     }
 
     /** Mod 別 KubeJS 形式が分からないとき用のコメントスケルトン。 */

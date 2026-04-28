@@ -121,6 +121,23 @@ public class StackBuilderWidget {
         return content;
     }
 
+    // --- Undo snapshot 用 ---
+    public long getBaseAmount() { return baseAmount; }
+    public int  getMultiplier() { return multiplier; }
+
+    /** Undo restore 用：3 値を直接書き戻し。default の baseAmount 計算は走らない。 */
+    public void restoreState(IngredientSpec spec, long baseAmt, int mult) {
+        this.content = spec == null ? IngredientSpec.EMPTY : spec;
+        this.baseAmount = Math.max(1, baseAmt);
+        this.multiplier = Math.max(1, mult);
+        if (amountBox != null) {
+            syncingFromSlot = true;
+            try {
+                amountBox.setValue(content.isEmpty() ? "" : String.valueOf(content.count()));
+            } finally { syncingFromSlot = false; }
+        }
+    }
+
     /**
      * クリック処理。BuilderScreen から呼ばれる。
      * 左クリ：drag 開始用に content を返す（false 返してデフォルト処理に流す）

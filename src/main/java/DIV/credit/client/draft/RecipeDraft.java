@@ -55,14 +55,19 @@ public interface RecipeDraft {
     /** spec をこのスロットに置けるかどうか。型ミスマッチを silently 弾く。 */
     default boolean acceptsAt(int slotIndex, IngredientSpec spec) {
         if (spec == null || spec.isEmpty()) return true;
+        // GT_CHANCE は output 限定。それ以外でも OK な base 型でも CHANCE が乗ってたら拒否
+        if (spec.option() == IngredientSpec.ItemOption.GT_CHANCE && !isOutputSlot(slotIndex)) {
+            return false;
+        }
+        IngredientSpec base = spec.unwrap();
         SlotKind k = slotKind(slotIndex);
         return switch (k) {
-            case ITEM_INPUT   -> spec instanceof IngredientSpec.Item || spec instanceof IngredientSpec.Tag;
-            case ITEM_OUTPUT  -> spec instanceof IngredientSpec.Item;
-            case FLUID_INPUT  -> spec instanceof IngredientSpec.Fluid || spec instanceof IngredientSpec.FluidTag;
-            case FLUID_OUTPUT -> spec instanceof IngredientSpec.Fluid;
-            case GAS_INPUT    -> spec instanceof IngredientSpec.Gas;
-            case GAS_OUTPUT   -> spec instanceof IngredientSpec.Gas;
+            case ITEM_INPUT   -> base instanceof IngredientSpec.Item || base instanceof IngredientSpec.Tag;
+            case ITEM_OUTPUT  -> base instanceof IngredientSpec.Item;
+            case FLUID_INPUT  -> base instanceof IngredientSpec.Fluid || base instanceof IngredientSpec.FluidTag;
+            case FLUID_OUTPUT -> base instanceof IngredientSpec.Fluid;
+            case GAS_INPUT    -> base instanceof IngredientSpec.Gas;
+            case GAS_OUTPUT   -> base instanceof IngredientSpec.Gas;
         };
     }
 
@@ -94,6 +99,7 @@ public interface RecipeDraft {
     @Nullable
     default String outputItemPath() {
         IngredientSpec out = getOutput();
+        if (out != null) out = out.unwrap();
         if (out instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
             return rl != null ? rl.getPath() : null;
@@ -106,6 +112,7 @@ public interface RecipeDraft {
     // ───── helpers for impls ─────
 
     static Ingredient toIngredient(IngredientSpec s) {
+        if (s != null) s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             return Ingredient.of(it.stack());
         }
@@ -118,6 +125,7 @@ public interface RecipeDraft {
 
     /** 出力アイテム抽出（Tag は不可なので Item のみ）。 */
     static ItemStack toOutputStack(IngredientSpec s) {
+        if (s != null) s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             return it.stack().copy();
         }
@@ -127,6 +135,7 @@ public interface RecipeDraft {
     /** KubeJS 単数文字列（count 無視）：Item は 'ns:path'、Tag は '#ns:path'。 */
     @Nullable
     static String formatIngredientString(IngredientSpec s) {
+        if (s != null) s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
             return "'" + rl + "'";
@@ -142,6 +151,7 @@ public interface RecipeDraft {
     static String formatIngredientWithCount(IngredientSpec s) {
         if (s == null || s.isEmpty()) return null;
         int c = s.count();
+        s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
             return c <= 1 ? "'" + rl + "'" : "Item.of('" + rl + "', " + c + ")";
