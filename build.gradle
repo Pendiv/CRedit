@@ -241,3 +241,27 @@ tasks.register('devJar', Jar) {
 tasks.register('allJars') {
     dependsOn 'jar', 'devJar'
 }
+
+// ─── GTCsoloEU dev runClient へ deploy ─────────────────────
+// このプロジェクトは GTCsoloEU の MODs/ 下にあるため、相対 ../../run/mods/ が
+// 親プロジェクトの dev 実行ディレクトリ。devJar をそこにコピーすれば親の
+// `./gradlew runClient` で credit が読み込まれる。
+//
+// 使い方:
+//   ./gradlew deployDev                        → ../../run/mods/credit-X.Y.Z-dev.jar に配置
+//   (cd ../.. && ./gradlew runClient)          → GTCsoloEU 環境で起動
+tasks.register('deployDev', Copy) {
+    dependsOn 'devJar'
+    def targetDir = file('../../run/mods')
+    from 'build/libs'
+    into targetDir
+    include "${mod_id}-*-dev.jar"
+    // 旧バージョン除去（同じ mod の複数バージョン同居でクラッシュ防止）
+    doFirst {
+        if (targetDir.exists()) {
+            targetDir.listFiles({ dir, name ->
+                name.startsWith("${mod_id}-") && name.endsWith('.jar')
+            } as FilenameFilter)?.each { it.delete() }
+        }
+    }
+}

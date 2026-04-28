@@ -32,19 +32,22 @@ public final class GenericDraft implements RecipeDraft {
     private final SlotKind[] kinds;
     private final IngredientSpec[] slots;
 
-    // GT 専用 numeric 値（namespace=gtceu かつ sample が GTRecipe の場合のみ意味あり）
+    // GT 系か（gtceu + StarT-Core 等の addon。recipe class が GTRecipe 派生）
     private final boolean isGt;
+    // Mek 系か（mekanism + EvolvedMekanism 等の extension。category が BaseRecipeCategory 派生）
+    private final boolean isMek;
     private long durationValue;
     private long eutValue;
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
 
-    private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds, boolean isGt,
+    private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds, boolean isGt, boolean isMek,
                          long duration, long eut, java.util.LinkedHashMap<String, Long> intData) {
         this.jeiType = jeiType;
         this.kinds   = kinds;
         this.slots   = new IngredientSpec[kinds.length];
         for (int i = 0; i < slots.length; i++) slots[i] = IngredientSpec.EMPTY;
         this.isGt = isGt;
+        this.isMek = isMek;
         this.durationValue = duration;
         this.eutValue = eut;
         if (intData != null) this.intDataValues.putAll(intData);
@@ -111,9 +114,11 @@ public final class GenericDraft implements RecipeDraft {
                         ? SlotKind.ITEM_OUTPUT : SlotKind.ITEM_INPUT;
                 }
             }
-            // GT カテゴリなら sample から numeric metadata 抽出
-            boolean isGt = "gtceu".equals(rt.getUid().getNamespace())
+            // システム判定（modId 不問）
+            boolean isGt  = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat)
                 && net.minecraftforge.fml.ModList.get().isLoaded("gtceu");
+            boolean isMek = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("mekanism");
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
             if (isGt) {
@@ -124,9 +129,9 @@ public final class GenericDraft implements RecipeDraft {
                 Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={}",
                     rt.getUid(), durationInit, eutInit, intDataInit);
             }
-            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported)",
-                rt.getUid(), views.size(), supported);
-            return new GenericDraft(rt, kinds, isGt, durationInit, eutInit, intDataInit);
+            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={}",
+                rt.getUid(), views.size(), supported, isGt, isMek);
+            return new GenericDraft(rt, kinds, isGt, isMek, durationInit, eutInit, intDataInit);
         } catch (Exception e) {
             Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
                 cat.getRecipeType().getUid(), e.toString());
@@ -251,8 +256,9 @@ public final class GenericDraft implements RecipeDraft {
         if (!anyEdit) return null;
 
         if (isGt) return emitGt(recipeId);
-        if ("mekanism".equals(jeiType.getUid().getNamespace())
-            && net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) {
+        if (isMek) {
+            // 既知 Mek schema にマッチすれば schema 形式、それ以外（addon の独自カテゴリ等）は
+            // 下のコメント skeleton にフォールバック
             String s = DIV.credit.client.draft.mek.MekanismKubeJSEmitter.emit(
                 recipeId, jeiType.getUid(), slots, kinds);
             if (s != null) return s;
@@ -311,8 +317,11 @@ public final class GenericDraft implements RecipeDraft {
 
         // GT サブカテゴリは親 type 名を使う必要あり（chem_dyes → chemical_bath 等）
         String path = DIV.credit.client.draft.gt.GTSupport.resolveKubeJsRecipeName(jeiType.getUid());
+        // KubeJS 経路は registered RecipeType の namespace を使う。
+        // gtceu native も addon (StarT-Core 等) も addon の namespace で emit される。
+        String ns = jeiType.getUid().getNamespace();
         StringBuilder sb = new StringBuilder();
-        sb.append("    event.recipes.gtceu.").append(path)
+        sb.append("    event.recipes.").append(ns).append('.').append(path)
           .append("('").append(recipeId).append("')\n");
         if (!itemIn.isEmpty())   sb.append("        .itemInputs(").append(String.join(", ", itemIn)).append(")\n");
         if (!fluidIn.isEmpty())  sb.append("        .inputFluids(").append(String.join(", ", fluidIn)).append(")\n");

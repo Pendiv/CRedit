@@ -99,20 +99,26 @@ public class DraftStore {
         if (RecipeTypes.CAMPFIRE_COOKING.equals(rt)) return new CookingDraft(CookingDraft.Type.CAMPFIRE);
         if (RecipeTypes.STONECUTTING.equals(rt))     return new StonecuttingDraft();
 
-        // GT カテゴリは GTSupport に委譲（hand-written 優先）
-        if ("gtceu".equals(rt.getUid().getNamespace()) && ModList.get().isLoaded("gtceu")) {
+        // GT システム判定（modId 不問。recipe class が GTRecipe 派生）
+        boolean isGt  = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
+        // Mek システム判定（modId 不問。category が BaseRecipeCategory 派生）
+        boolean isMek = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
+
+        // hand-written drafts (GT compressor/assembler, Mek pressurized_reaction) を優先
+        if (isGt && ModList.get().isLoaded("gtceu")) {
             RecipeDraft d = DIV.credit.client.draft.gt.GTSupport.tryCreate(cat);
             if (d != null) return d;
         }
-        // Mekanism カテゴリは MekanismSupport に委譲（hand-written 優先）
-        if ("mekanism".equals(rt.getUid().getNamespace()) && ModList.get().isLoaded("mekanism")) {
+        if (isMek && ModList.get().isLoaded("mekanism")) {
             RecipeDraft d = DIV.credit.client.draft.mek.MekanismSupport.tryCreate(cat);
             if (d != null) return d;
         }
-        // 上記いずれも未対応 → GenericDraft で probe（対応 mod の namespace のみ）
-        // 全 MOD 対応はやめ、minecraft / gtceu / mekanism のみに絞る
+        // GenericDraft 受け入れ条件:
+        //   - vanilla minecraft
+        //   - GT システム (gtceu 派生 mod 含む: StarT-Core 等)
+        //   - Mek システム (Mek extension 含む: EvolvedMekanism 等)
         String ns = rt.getUid().getNamespace();
-        if (!ALLOWED_NAMESPACES.contains(ns)) return null;
+        if (!"minecraft".equals(ns) && !isGt && !isMek) return null;
         var rt2 = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
         if (rt2 != null) {
             return GenericDraft.tryCreate(cat, rt2.getRecipeManager());
@@ -120,18 +126,20 @@ public class DraftStore {
         return null;
     }
 
-    /** GenericDraft 経由の対応 namespace 限定リスト。 */
-    private static final java.util.Set<String> ALLOWED_NAMESPACES = java.util.Set.of(
-        "minecraft", "gtceu", "mekanism"
-    );
-
-    /** 明示的に対応外（情報・診断ページなど、レシピ編集対象外）。 */
+    /** 明示的に対応外（情報・診断ページや KubeJS schema 不在で編集しても dump できないもの）。 */
     private static final java.util.Set<String> EXPLICIT_UNSUPPORTED = java.util.Set.of(
-        "gtceu:multiblock_info",          // マルチブロック情報
-        "gtceu:bedrock_fluid_diagram",    // 岩盤液体図
-        "gtceu:bedrock_ore_diagram",      // 岩盤鉱石図
-        "gtceu:ore_vein_diagram",         // 鉱脈図
-        "gtceu:ore_processing_diagram",   // 鉱石処理工程図
+        "gtceu:multiblock_info",                       // マルチブロック情報
+        "gtceu:bedrock_fluid_diagram",                 // 岩盤液体図
+        "gtceu:bedrock_ore_diagram",                   // 岩盤鉱石図
+        "gtceu:ore_vein_diagram",                      // 鉱脈図
+        "gtceu:ore_processing_diagram",                // 鉱石処理工程図
+        // Mek 系で KubeJS schema が存在しないため編集しても dump 不能
+        "mekanism:sps_casing",                         // SPS (Supercritical Phase Shifter)
+        "mekanism:boiler_casing",                      // ボイラー
+        "mekanism:nutritional_liquifier",              // 栄養液化機
+        "mekanismgenerators:fission",                  // Mek Generators 核分裂炉
+        "evolvedmekanism:thermalizer",                 // EvolvedMek サーマライザー (MELTER)
+        "evolvedmekanism:solidification_chamber",      // EvolvedMek 固化チャンバー
         "gtceu:programmed_circuit",       // プログラム回路ピッカー
         "ldlib:test_category"             // LDLib テスト用
     );

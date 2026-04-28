@@ -23,7 +23,29 @@ import java.util.Map;
  */
 public final class GTSupport {
 
+    private static final Class<?> GT_RECIPE_CLASS = tryLoad("com.gregtechceu.gtceu.api.recipe.GTRecipe");
+
     private GTSupport() {}
+
+    private static Class<?> tryLoad(String name) {
+        try { return Class.forName(name); } catch (ClassNotFoundException e) { return null; }
+    }
+
+    /**
+     * GT システムカテゴリ判定（modId に依存しない）。
+     * JEI の RecipeType<T> から T = GTRecipe（または subclass）を確認する。
+     * StarT-Core 等の addon は gtceu: namespace で登録されるが、custom namespace
+     * で登録される将来 addon にも対応するためクラス判定を採用。
+     */
+    public static boolean isGtCategory(@Nullable mezz.jei.api.recipe.category.IRecipeCategory<?> cat) {
+        if (cat == null || GT_RECIPE_CLASS == null) return false;
+        try {
+            Class<?> recipeClass = cat.getRecipeType().getRecipeClass();
+            return recipeClass != null && GT_RECIPE_CLASS.isAssignableFrom(recipeClass);
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     private static long EMPTY_RECIPE_COUNTER = 0;
 

@@ -89,9 +89,18 @@ public final class MekanismKubeJSEmitter {
 
     /**
      * 対応カテゴリなら KubeJS recipe 文字列を返す。未対応 / 必須 field 不足なら null。
+     *
+     * 経路:
+     *  - mekanism:* 標準 schema → event.recipes.mekanism.<name>({...}) (KubeJS Mek plugin 経由)
+     *  - evolvedmekanism:* 一部 → event.custom({type:..., ...}).id() で raw JSON
      */
     @Nullable
     public static String emit(String recipeId, ResourceLocation jeiUid, IngredientSpec[] slots, SlotKind[] kinds) {
+        // EvolvedMek: event.custom 経路（KubeJS schema が存在しないため raw JSON で投げる）
+        if ("evolvedmekanism".equals(jeiUid.getNamespace())) {
+            return emitEvolvedMek(recipeId, jeiUid.getPath(), slots, kinds);
+        }
+        // mekanism:* 標準
         SchemaInfo info = SCHEMA_BY_UID.get(jeiUid.getPath());
         if (info == null) return null;
 
@@ -308,5 +317,155 @@ public final class MekanismKubeJSEmitter {
             return "'" + g.gasId() + " " + g.amount() + "'";
         }
         return null;
+    }
+
+    // ───── EvolvedMekanism event.custom emit ─────
+    //
+    // EvolvedMek の RecipeSerializer は KubeJS Mek plugin に schema が無いため、
+    // event.custom({type, fields...}).id() で raw JSON を投げる必要がある。
+    // フィールド名は EvolvedMek serializer 源 + 手書き参考 (kubejs/server_scripts/.../evolved/APT.js) で確定済み。
+    //
+    // JEI category UID パターン:
+    //   evolvedmekanism:ingot_better_gold → APT (item + chemical → item)
+    //   evolvedmekanism:alloyer           → Alloying (3 items → item)
+    //   evolvedmekanism:chemixer          → Chemixing (2 items + gas → item)
+
+    @Nullable
+    private static String emitEvolvedMek(String recipeId, String path, IngredientSpec[] slots, SlotKind[] kinds) {
+        return switch (path) {
+            case "ingot_better_gold" -> emitAPT(recipeId, slots, kinds);
+            case "alloyer"           -> emitAlloyer(recipeId, slots, kinds);
+            case "chemixer"          -> emitChemixer(recipeId, slots, kinds);
+            default -> null; // thermalizer / solidification_chamber 等は EXPLICIT_UNSUPPORTED で先に弾かれる想定
+        };
+    }
+
+    /** evolvedmekanism:apt — Mek 標準 ItemStackGasToItemStack 流用、フィールドは itemInput/chemicalInput/output。 */
+    @Nullable
+    private static String emitAPT(String recipeId, IngredientSpec[] slots, SlotKind[] kinds) {
+        String item = findFirst(slots, kinds, SlotKind.ITEM_INPUT,  MekanismKubeJSEmitter::itemIngredientJson);
+        String gas  = findFirst(slots, kinds, SlotKind.GAS_INPUT,   MekanismKubeJSEmitter::gasIngredientJson);
+        String op   = findFirst(slots, kinds, SlotKind.ITEM_OUTPUT, MekanismKubeJSEmitter::itemOutputJson);
+        if (item == null || gas == null || op == null) return null;
+        LinkedHashMap<String, String> f = new LinkedHashMap<>();
+        f.put("itemInput", item);
+        f.put("chemicalInput", gas);  // Mek 標準は chemicalInput
+        f.put("output", op);
+        return buildEventCustom(recipeId, "evolvedmekanism:apt", f);
+    }
+
+    /** evolvedmekanism:alloying — 3 item input + 1 item output。 */
+    @Nullable
+    private static String emitAlloyer(String recipeId, IngredientSpec[] slots, SlotKind[] kinds) {
+        List<String> ins = collectAll(slots, kinds, SlotKind.ITEM_INPUT, MekanismKubeJSEmitter::itemIngredientJson);
+        String op = findFirst(slots, kinds, SlotKind.ITEM_OUTPUT, MekanismKubeJSEmitter::itemOutputJson);
+        if (ins.size() < 3 || op == null) return null;
+        LinkedHashMap<String, String> f = new LinkedHashMap<>();
+        f.put("mainInput", ins.get(0));
+        f.put("extraInput", ins.get(1));
+        f.put("secondExtraInput", ins.get(2));
+        f.put("output", op);
+        return buildEventCustom(recipeId, "evolvedmekanism:alloying", f);
+    }
+
+    /** evolvedmekanism:chemixing — 2 item input + 1 gas input + 1 item output。EvolvedMek 独自で field 名は gasInput。 */
+    @Nullable
+    private static String emitChemixer(String recipeId, IngredientSpec[] slots, SlotKind[] kinds) {
+        List<String> ins = collectAll(slots, kinds, SlotKind.ITEM_INPUT, MekanismKubeJSEmitter::itemIngredientJson);
+        String gas = findFirst(slots, kinds, SlotKind.GAS_INPUT, MekanismKubeJSEmitter::gasIngredientJson);
+        String op  = findFirst(slots, kinds, SlotKind.ITEM_OUTPUT, MekanismKubeJSEmitter::itemOutputJson);
+        if (ins.size() < 2 || gas == null || op == null) return null;
+        LinkedHashMap<String, String> f = new LinkedHashMap<>();
+        f.put("mainInput", ins.get(0));
+        f.put("extraInput", ins.get(1));
+        f.put("gasInput", gas);  // EvolvedMek 独自は gasInput
+        f.put("output", op);
+        return buildEventCustom(recipeId, "evolvedmekanism:chemixing", f);
+    }
+
+    private static String buildEventCustom(String recipeId, String type, LinkedHashMap<String, String> fields) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("    event.custom({\n");
+        sb.append("        type: '").append(type).append("',\n");
+        int i = 0, n = fields.size();
+        for (Map.Entry<String, String> e : fields.entrySet()) {
+            sb.append("        ").append(e.getKey()).append(": ").append(e.getValue());
+            if (++i < n) sb.append(",");
+            sb.append("\n");
+        }
+        sb.append("    }).id('").append(recipeId).append("');\n");
+        return sb.toString();
+    }
+
+    // ───── JSON value builders for event.custom ─────
+
+    /** Mek ItemStackIngredient JSON: { ingredient: { item: 'id' }, amount: N } または tag 版。amount=1 は省略。 */
+    @Nullable
+    private static String itemIngredientJson(IngredientSpec s) {
+        if (s == null || s.isEmpty()) return null;
+        IngredientSpec base = s.unwrap();
+        if (base instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
+            int count = it.stack().getCount();
+            String inner = "{ item: '" + rl + "' }";
+            return count <= 1 ? "{ ingredient: " + inner + " }"
+                              : "{ ingredient: " + inner + ", amount: " + count + " }";
+        }
+        if (base instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+            String inner = "{ tag: '" + tg.tagId() + "' }";
+            int count = Math.max(1, tg.count());
+            return count <= 1 ? "{ ingredient: " + inner + " }"
+                              : "{ ingredient: " + inner + ", amount: " + count + " }";
+        }
+        return null;
+    }
+
+    /** Mek GasStackIngredient JSON: { amount: N, gas: 'id' }。 */
+    @Nullable
+    private static String gasIngredientJson(IngredientSpec s) {
+        if (s == null || s.isEmpty()) return null;
+        IngredientSpec base = s.unwrap();
+        if (base instanceof IngredientSpec.Gas g && g.gasId() != null) {
+            return "{ amount: " + g.amount() + ", gas: '" + g.gasId() + "' }";
+        }
+        return null;
+    }
+
+    /** ItemStack output JSON: { item: 'id', count: N }。count=1 は省略。 */
+    @Nullable
+    private static String itemOutputJson(IngredientSpec s) {
+        if (s == null || s.isEmpty()) return null;
+        IngredientSpec base = s.unwrap();
+        if (base instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
+            int count = it.stack().getCount();
+            return count <= 1 ? "{ item: '" + rl + "' }"
+                              : "{ item: '" + rl + "', count: " + count + " }";
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String findFirst(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want,
+                                    java.util.function.Function<IngredientSpec, String> formatter) {
+        for (int i = 0; i < slots.length; i++) {
+            if (kinds[i] == want && !slots[i].isEmpty()) {
+                String s = formatter.apply(slots[i]);
+                if (s != null) return s;
+            }
+        }
+        return null;
+    }
+
+    private static List<String> collectAll(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want,
+                                            java.util.function.Function<IngredientSpec, String> formatter) {
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < slots.length; i++) {
+            if (kinds[i] == want && !slots[i].isEmpty()) {
+                String s = formatter.apply(slots[i]);
+                if (s != null) result.add(s);
+            }
+        }
+        return result;
     }
 }
