@@ -339,6 +339,21 @@ public class RecipeArea {
     }
 
     /**
+     * Create heat icon の screen rect を返す。
+     * Create MixingCategory.draw() の line 47 で blaze burner が
+     * `(width/2 + 3, 55)` 相対位置に描画される。20x20 サイズで近似。
+     * drawable 未準備時は null。
+     */
+    @Nullable
+    public Rect2i getHeatIconRect() {
+        if (drawable == null) return null;
+        Rect2i layout = drawable.getRect();
+        int x = layout.getX() + layout.getWidth() / 2 + 3;
+        int y = layout.getY() + 55;
+        return new Rect2i(x, y, 20, 20);
+    }
+
+    /**
      * カテゴリ描画（drawRecipe 経由）後、編集済みスロットだけユーザー ingredient を上書き描画。
      * slot 中身は clearAllSlotIngredients で既に空になってるので、
      * 編集なしスロットはカテゴリ固有の空スロット枠が見える。

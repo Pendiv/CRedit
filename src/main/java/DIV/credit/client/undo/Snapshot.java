@@ -113,16 +113,23 @@ public final class Snapshot {
         for (var f : d.numericFields()) {
             h = h * 31 + Double.hashCode(f.getter().getAsDouble());
         }
+        h = h * 31 + d.getHeatLevel().hashCode();
+        h = h * 31 + (d.isKeepHeldItem() ? 1 : 0);
         return h;
     }
 
     public static final class DraftState {
         public final IngredientSpec[] slots;
         public final Map<String, Double> numericValues;
+        public final DIV.credit.client.draft.create.HeatLevel heatLevel;
+        public final boolean keepHeldItem;
 
-        private DraftState(IngredientSpec[] slots, Map<String, Double> numerics) {
+        private DraftState(IngredientSpec[] slots, Map<String, Double> numerics,
+                           DIV.credit.client.draft.create.HeatLevel heat, boolean keep) {
             this.slots = slots;
             this.numericValues = numerics;
+            this.heatLevel = heat;
+            this.keepHeldItem = keep;
         }
 
         public static DraftState capture(RecipeDraft d) {
@@ -132,7 +139,7 @@ public final class Snapshot {
             for (var f : d.numericFields()) {
                 nv.put(f.label(), f.getter().getAsDouble());
             }
-            return new DraftState(s, nv);
+            return new DraftState(s, nv, d.getHeatLevel(), d.isKeepHeldItem());
         }
 
         public void applyTo(RecipeDraft d) {
@@ -144,6 +151,8 @@ public final class Snapshot {
                 Double v = numericValues.get(f.label());
                 if (v != null) f.setter().accept(v);
             }
+            if (heatLevel != null) d.setHeatLevel(heatLevel);
+            d.setKeepHeldItem(keepHeldItem);
         }
     }
 }

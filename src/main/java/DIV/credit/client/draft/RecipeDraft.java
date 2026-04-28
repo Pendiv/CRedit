@@ -55,8 +55,11 @@ public interface RecipeDraft {
     /** spec をこのスロットに置けるかどうか。型ミスマッチを silently 弾く。 */
     default boolean acceptsAt(int slotIndex, IngredientSpec spec) {
         if (spec == null || spec.isEmpty()) return true;
-        // GT_CHANCE は output 限定。それ以外でも OK な base 型でも CHANCE が乗ってたら拒否
-        if (spec.option() == IngredientSpec.ItemOption.GT_CHANCE && !isOutputSlot(slotIndex)) {
+        // GT_CHANCE / CREATE_CHANCE は output 限定。それ以外でも OK な base 型でも CHANCE が乗ってたら拒否
+        var opt = spec.option();
+        if ((opt == IngredientSpec.ItemOption.GT_CHANCE
+            || opt == IngredientSpec.ItemOption.CREATE_CHANCE)
+            && !isOutputSlot(slotIndex)) {
             return false;
         }
         IngredientSpec base = spec.unwrap();
@@ -83,6 +86,32 @@ public interface RecipeDraft {
      * GT 電気機械（EU 消費する）のみ true。Mek/vanilla や GT の非電気（primitive_blast 等）は false。
      */
     default boolean usesGtElectricity() { return false; }
+
+    /**
+     * Create の heat 切替 UI を表示する適格性。
+     * mixing / compacting / packing draft のみ true。それ以外 false。
+     */
+    default boolean canRequireHeat() { return false; }
+
+    /** 現在の heat 設定 (NONE / HEATED / SUPERHEATED)。canRequireHeat() = false なら常に NONE。 */
+    default DIV.credit.client.draft.create.HeatLevel getHeatLevel() {
+        return DIV.credit.client.draft.create.HeatLevel.NONE;
+    }
+
+    /** heat 設定。canRequireHeat() = false な draft では no-op。 */
+    default void setHeatLevel(DIV.credit.client.draft.create.HeatLevel level) {}
+
+    /**
+     * Create item_application / deploying の keepHeldItem 切替適格性。
+     * true な draft のみ UI 上に keepHeldItem トグルを出す。
+     */
+    default boolean canKeepHeldItem() { return false; }
+
+    /** keepHeldItem 値 (default false)。 */
+    default boolean isKeepHeldItem() { return false; }
+
+    /** keepHeldItem 設定。canKeepHeldItem() = false な draft では no-op。 */
+    default void setKeepHeldItem(boolean value) {}
 
     record NumericField(
         String label,

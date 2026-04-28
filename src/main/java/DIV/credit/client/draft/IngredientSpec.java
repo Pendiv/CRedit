@@ -42,7 +42,9 @@ public interface IngredientSpec {
         VANILLA_DAMAGE,
         VANILLA_KEEP,
         GT_CATALYST,
-        GT_CHANCE
+        GT_CHANCE,
+        /** Create 系 output の確率指定 (chanceMille / 1000.0 = 0..1)。tierBoost は未使用。 */
+        CREATE_CHANCE
     }
 
     /**

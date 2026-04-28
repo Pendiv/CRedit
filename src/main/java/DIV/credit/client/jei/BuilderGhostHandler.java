@@ -48,9 +48,15 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
 
         List<Target<I>> targets = new ArrayList<>();
         int rejected = 0;
-        for (RecipeArea.GhostTargetInfo info : area.collectGhostTargets()) {
-            if (!area.getDraft().acceptsAt(info.slotIndex(), testSpec)) { rejected++; continue; }
-            targets.add(new SlotTarget<>(info.screenArea(), ingredient.getType(), info.slotIndex(), area));
+        try {
+            for (RecipeArea.GhostTargetInfo info : area.collectGhostTargets()) {
+                if (!area.getDraft().acceptsAt(info.slotIndex(), testSpec)) { rejected++; continue; }
+                targets.add(new SlotTarget<>(info.screenArea(), ingredient.getType(), info.slotIndex(), area));
+            }
+        } catch (Throwable t) {
+            // dev runtime で稀に SecureJar が inner class を見失う問題への防御。
+            // ターゲット列挙だけ skip して残り (StackBuilder/CFG/Result) は試行する。
+            Credit.LOGGER.error("[CraftPattern] ghost slot target enumeration failed; skipping recipe slots", t);
         }
         // StackBuilder helper widget も drop ターゲットに（item/fluid/gas 全部受け入れ）
         Rect2i sbArea = gui.getStackBuilderArea();

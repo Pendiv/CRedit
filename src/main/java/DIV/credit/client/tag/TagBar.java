@@ -257,7 +257,8 @@ public class TagBar {
         BoxMode newMode;
         if (cfgContent.isEmpty()) {
             newMode = BoxMode.TAG;
-        } else if (cfgContent.option() == IngredientSpec.ItemOption.GT_CHANCE) {
+        } else if (cfgContent.option() == IngredientSpec.ItemOption.GT_CHANCE
+                || cfgContent.option() == IngredientSpec.ItemOption.CREATE_CHANCE) {
             newMode = BoxMode.CHANCE;
         } else {
             newMode = BoxMode.HIDDEN;
@@ -537,10 +538,17 @@ public class TagBar {
         if (opt != IngredientSpec.ItemOption.NONE) {
             lines.add(Component.translatable("gui.credit.tagbar.cfg.applied",
                 Component.translatable(nameKey(opt))).withStyle(ChatFormatting.AQUA));
-            if (opt == IngredientSpec.ItemOption.GT_CHANCE
+            if ((opt == IngredientSpec.ItemOption.GT_CHANCE
+                || opt == IngredientSpec.ItemOption.CREATE_CHANCE)
                 && cfgContent instanceof IngredientSpec.Configured c) {
-                lines.add(Component.translatable("gui.credit.tagbar.cfg.chance_values",
-                    c.chanceMille(), c.tierBoost()).withStyle(ChatFormatting.GRAY));
+                if (opt == IngredientSpec.ItemOption.CREATE_CHANCE) {
+                    // Create は boost 無し、確率のみ表示
+                    lines.add(Component.translatable("gui.credit.tagbar.cfg.create_chance_value",
+                        String.format("%.3f", c.chanceMille() / 1000.0)).withStyle(ChatFormatting.GRAY));
+                } else {
+                    lines.add(Component.translatable("gui.credit.tagbar.cfg.chance_values",
+                        c.chanceMille(), c.tierBoost()).withStyle(ChatFormatting.GRAY));
+                }
             }
         }
         g.renderComponentTooltip(font, lines, mouseX, mouseY);
@@ -578,6 +586,8 @@ public class TagBar {
             case "gtceu" -> List.of(
                 IngredientSpec.ItemOption.GT_CHANCE,
                 IngredientSpec.ItemOption.GT_CATALYST);
+            case "create" -> List.of(
+                IngredientSpec.ItemOption.CREATE_CHANCE);
             // mekanism 含む他 namespace は対応機能なし
             default -> List.of();
         };
@@ -599,6 +609,7 @@ public class TagBar {
             case VANILLA_KEEP   -> "gui.credit.tagbar.cfg.opt.vanilla_keep";
             case GT_CATALYST    -> "gui.credit.tagbar.cfg.opt.gt_catalyst";
             case GT_CHANCE      -> "gui.credit.tagbar.cfg.opt.gt_chance";
+            case CREATE_CHANCE  -> "gui.credit.tagbar.cfg.opt.create_chance";
         };
     }
 
@@ -703,10 +714,11 @@ public class TagBar {
         }
     }
 
-    /** "chance,boost" 形式を解析して Configured に書き戻す。 */
+    /** "chance,boost" 形式を解析して Configured に書き戻す。Create は boost 無視。 */
     private void onChanceTyped(String s) {
         if (!(cfgContent instanceof IngredientSpec.Configured c)) return;
-        if (c.opt() != IngredientSpec.ItemOption.GT_CHANCE) return;
+        if (c.opt() != IngredientSpec.ItemOption.GT_CHANCE
+            && c.opt() != IngredientSpec.ItemOption.CREATE_CHANCE) return;
         String[] parts = (s == null ? "" : s).split(",", -1);
         int chance = parts.length > 0 ? parseIntSafe(parts[0], c.chanceMille()) : c.chanceMille();
         int boost  = parts.length > 1 ? parseIntSafe(parts[1], c.tierBoost())  : c.tierBoost();

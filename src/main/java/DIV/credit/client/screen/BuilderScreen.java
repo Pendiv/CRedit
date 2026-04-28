@@ -49,10 +49,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     public static final int DUMP_H = 10;
     public static final int SETTINGS_W = 12;
     public static final int SETTINGS_H = 12;
+    public static final int QUESTION_W = 16;
+    public static final int QUESTION_H = 16;
     private static final ResourceLocation DUMP_TEX =
             new ResourceLocation(Credit.MODID, "ui/dump.png");
     private static final ResourceLocation SETTINGS_TEX =
             new ResourceLocation(Credit.MODID, "ui/setting.png");
+    private static final ResourceLocation QUESTION_TEX =
+            new ResourceLocation(Credit.MODID, "ui/question.png");
 
     /** Static so drafts and last-selected category persist across screen open/close (until game exit). */
     private static final DraftStore DRAFT_STORE = new DraftStore();
@@ -88,6 +92,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private int toggleX = -1, toggleY, toggleW, toggleH;
     private int dumpX   = -1, dumpY;
     private int settingsX = -1, settingsY;
+    private int questionX = -1, questionY;
+    /** クリックで tooltip ON/OFF。hover では出さない (ユーザー要望)。 */
+    private boolean questionTooltipOpen = false;
 
     // Dynamic numeric fields (derived from current draft.numericFields())
     private final List<EditBox> numericBoxes = new ArrayList<>();
@@ -323,6 +330,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private void applyCategory(IRecipeCategory<?> cat) {
         this.currentCategory = cat;
         lastCategory = cat;
+        // カテゴリ遷移で ? tooltip 自動 close
+        questionTooltipOpen = false;
         recipeArea.setCategory(cat, DRAFT_STORE.getOrCreate(cat));
         rebuildNumericFields(recipeArea.getDraft());
         RecipeDraft draft = recipeArea.getDraft();
@@ -428,6 +437,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         renderNumberLabels(g);
         renderDumpButton(g, mouseX, mouseY);
         renderSettingsButton(g, mouseX, mouseY);
+        renderHeatToggle(g, mouseX, mouseY);
+        renderQuestionHelp(g, mouseX, mouseY);
         tagBar.render(g, mouseX, mouseY);
         stackBuilder.render(g, mouseX, mouseY);
         energyHelper.render(g, font, mouseX, mouseY);
@@ -504,6 +515,90 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         g.blit(DUMP_TEX, dumpX, dumpY, 0, 0, DUMP_W, DUMP_H, DUMP_W, DUMP_H);
     }
 
+    /**
+     * Create カテゴリ別の trick toggle アイコン。drawable rect 中央右下に常時上書き。
+     * mixing/packing → heat 3 値切替 (BLAZE_POWDER/_ROD/BARRIER icon)。
+     * item_application/deploying → keepHeldItem 2 値切替 (item icon ON/OFF)。
+     * これらカテゴリは同時に該当しないため位置を共有する。
+     * クリック: 値変更 / Shift+クリック: NONE/false 直接。
+     */
+    private void renderHeatToggle(GuiGraphics g, int mouseX, int mouseY) {
+        RecipeDraft draft = recipeArea.getDraft();
+        if (draft == null) return;
+        boolean heatMode = draft.canRequireHeat();
+        boolean keepMode = !heatMode && draft.canKeepHeldItem();
+        if (!heatMode && !keepMode) return;
+        net.minecraft.client.renderer.Rect2i rect = recipeArea.getHeatIconRect();
+        if (rect == null) return;
+        int x = rect.getX();
+        int y = rect.getY();
+        boolean hover = mouseX >= x && mouseX < x + rect.getWidth()
+                     && mouseY >= y && mouseY < y + rect.getHeight();
+        g.fill(x - 1, y - 1, x + 19, y + 19, 0xFF8B8B8B);
+        g.fill(x,     y,     x + 18, y + 18, 0xFF161628);
+        ItemStack icon;
+        Component header;
+        Component hint;
+        if (heatMode) {
+            var hl = draft.getHeatLevel();
+            icon = switch (hl) {
+                case NONE        -> new ItemStack(net.minecraft.world.item.Items.BARRIER);
+                case HEATED      -> new ItemStack(net.minecraft.world.item.Items.BLAZE_POWDER);
+                case SUPERHEATED -> new ItemStack(net.minecraft.world.item.Items.BLAZE_ROD);
+            };
+            Component name = Component.translatable("gui.credit.heat." + hl.name().toLowerCase());
+            header = Component.translatable("gui.credit.heat.current", name)
+                .withStyle(ChatFormatting.WHITE);
+            hint = Component.translatable("gui.credit.heat.hint")
+                .withStyle(ChatFormatting.DARK_GRAY);
+        } else {
+            boolean on = draft.isKeepHeldItem();
+            icon = on ? new ItemStack(net.minecraft.world.item.Items.SHIELD)
+                      : new ItemStack(net.minecraft.world.item.Items.BARRIER);
+            Component state = Component.literal(on ? "ON" : "OFF")
+                .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY);
+            header = Component.translatable("gui.credit.keep_held.current", state)
+                .withStyle(ChatFormatting.WHITE);
+            hint = Component.translatable("gui.credit.keep_held.hint")
+                .withStyle(ChatFormatting.DARK_GRAY);
+        }
+        g.renderItem(icon, x + 1, y + 1);
+        if (hover) {
+            g.fill(x, y, x + 18, y + 18, 0x33FFFFFF);
+            g.renderComponentTooltip(font, java.util.List.of(header, hint), mouseX, mouseY);
+        }
+    }
+
+    /**
+     * 編集不可カテゴリの ? icon を recipeArea 左上に描画。
+     * hover で hilight、click で tooltip 表示 ON/OFF (ユーザー要望)。
+     * 翻訳キー: gui.credit.unsupported.<reason>
+     */
+    private void renderQuestionHelp(GuiGraphics g, int mouseX, int mouseY) {
+        questionX = -1;
+        if (currentCategory == null) return;
+        String uid = currentCategory.getRecipeType().getUid().toString();
+        DIV.credit.client.draft.UnsupportedReason reason =
+            DIV.credit.client.draft.DraftStore.getUnsupportedReason(uid);
+        if (reason == null) return;
+        questionX = leftPos + 2;
+        questionY = recipeAreaTop + 2;
+        boolean hover = mouseX >= questionX && mouseX < questionX + QUESTION_W
+                     && mouseY >= questionY && mouseY < questionY + QUESTION_H;
+        if (hover) g.fill(questionX - 1, questionY - 1,
+                          questionX + QUESTION_W + 1, questionY + QUESTION_H + 1, 0x66FFFFFF);
+        g.blit(QUESTION_TEX, questionX, questionY, 0, 0, QUESTION_W, QUESTION_H, QUESTION_W, QUESTION_H);
+        if (questionTooltipOpen) {
+            Component header = Component.translatable("gui.credit.unsupported.header")
+                .withStyle(ChatFormatting.WHITE);
+            Component body = Component.translatable(reason.translationKey())
+                .withStyle(ChatFormatting.GRAY);
+            Component hint = Component.translatable("gui.credit.unsupported.click_close")
+                .withStyle(ChatFormatting.DARK_GRAY);
+            g.renderComponentTooltip(font, java.util.List.of(header, body, hint), mouseX, mouseY);
+        }
+    }
+
     /** Settings (gear) ボタン：常時表示、画面右上付近。dump とは独立。 */
     private void renderSettingsButton(GuiGraphics g, int mouseX, int mouseY) {
         settingsX = leftPos + imageWidth - SETTINGS_W - 2;
@@ -560,6 +655,40 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             playClick();
             Minecraft.getInstance().setScreen(new SettingsScreen(this));
             return true;
+        }
+        // ? icon: クリックで tooltip 表示 toggle
+        if (button == 0 && questionX >= 0
+            && mx >= questionX && mx < questionX + QUESTION_W
+            && my >= questionY && my < questionY + QUESTION_H) {
+            questionTooltipOpen = !questionTooltipOpen;
+            playClick();
+            return true;
+        }
+        // ? tooltip 表示中、icon 以外をクリックしたら close (click は通常処理に流す)
+        if (questionTooltipOpen) {
+            questionTooltipOpen = false;
+            // return true せず、他 handler に click を委譲
+        }
+        // Create カテゴリ別 toggle icon (heat or keepHeldItem)
+        RecipeDraft hd = recipeArea.getDraft();
+        if (button == 0 && hd != null && (hd.canRequireHeat() || hd.canKeepHeldItem())) {
+            net.minecraft.client.renderer.Rect2i hr = recipeArea.getHeatIconRect();
+            if (hr != null && mx >= hr.getX() && mx < hr.getX() + hr.getWidth()
+                           && my >= hr.getY() && my < hr.getY() + hr.getHeight()) {
+                if (hd.canRequireHeat()) {
+                    if (Screen.hasShiftDown()) {
+                        hd.setHeatLevel(DIV.credit.client.draft.create.HeatLevel.NONE);
+                    } else {
+                        hd.setHeatLevel(hd.getHeatLevel().cycle());
+                    }
+                } else {
+                    // keepHeldItem: Shift+クリで強制 OFF、通常クリで toggle
+                    if (Screen.hasShiftDown()) hd.setKeepHeldItem(false);
+                    else                       hd.setKeepHeldItem(!hd.isKeepHeldItem());
+                }
+                playClick();
+                return true;
+            }
         }
 
         // Tag bar: Ctrl+right-click anywhere on the bar clears input + result

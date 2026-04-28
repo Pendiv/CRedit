@@ -36,11 +36,20 @@ public final class GenericDraft implements RecipeDraft {
     private final boolean isGt;
     // Mek 系か（mekanism + EvolvedMekanism 等の extension。category が BaseRecipeCategory 派生）
     private final boolean isMek;
+    // IE 系か（immersiveengineering 本体 + 派生。category が IERecipeCategory 派生）
+    private final boolean isIe;
+    // Create 系か（category が CreateRecipeCategory 派生）
+    private final boolean isCreate;
+    // Create heat 設定 (mixing/compacting/packing のみ意味あり)
+    private DIV.credit.client.draft.create.HeatLevel heatLevel = DIV.credit.client.draft.create.HeatLevel.NONE;
+    // Create keepHeldItem 設定 (item_application/deploying のみ意味あり)
+    private boolean keepHeldItem = false;
     private long durationValue;
     private long eutValue;
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
 
-    private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds, boolean isGt, boolean isMek,
+    private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
+                         boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
                          long duration, long eut, java.util.LinkedHashMap<String, Long> intData) {
         this.jeiType = jeiType;
         this.kinds   = kinds;
@@ -48,6 +57,8 @@ public final class GenericDraft implements RecipeDraft {
         for (int i = 0; i < slots.length; i++) slots[i] = IngredientSpec.EMPTY;
         this.isGt = isGt;
         this.isMek = isMek;
+        this.isIe = isIe;
+        this.isCreate = isCreate;
         this.durationValue = duration;
         this.eutValue = eut;
         if (intData != null) this.intDataValues.putAll(intData);
@@ -119,6 +130,10 @@ public final class GenericDraft implements RecipeDraft {
                 && net.minecraftforge.fml.ModList.get().isLoaded("gtceu");
             boolean isMek = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat)
                 && net.minecraftforge.fml.ModList.get().isLoaded("mekanism");
+            boolean isIe  = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("immersiveengineering");
+            boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("create");
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
             if (isGt) {
@@ -129,9 +144,9 @@ public final class GenericDraft implements RecipeDraft {
                 Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={}",
                     rt.getUid(), durationInit, eutInit, intDataInit);
             }
-            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={}",
-                rt.getUid(), views.size(), supported, isGt, isMek);
-            return new GenericDraft(rt, kinds, isGt, isMek, durationInit, eutInit, intDataInit);
+            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={}",
+                rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate);
+            return new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
         } catch (Exception e) {
             Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
                 cat.getRecipeType().getUid(), e.toString());
@@ -172,6 +187,31 @@ public final class GenericDraft implements RecipeDraft {
     @Override public IngredientSpec getSlot(int i) { return slots[i]; }
     @Override public RecipeType<?> recipeType() { return jeiType; }
     @Override public boolean usesGtElectricity() { return isGt && eutValue > 0; }
+
+    @Override
+    public boolean canRequireHeat() {
+        if (!isCreate) return false;
+        String path = jeiType.getUid().getPath();
+        // JEI category UID ベース。packing は実は compacting レシピで heat 可。
+        return "mixing".equals(path) || "compacting".equals(path) || "packing".equals(path);
+    }
+
+    @Override public DIV.credit.client.draft.create.HeatLevel getHeatLevel() { return heatLevel; }
+
+    @Override public void setHeatLevel(DIV.credit.client.draft.create.HeatLevel level) {
+        if (level != null) this.heatLevel = level;
+    }
+
+    @Override
+    public boolean canKeepHeldItem() {
+        if (!isCreate) return false;
+        String path = jeiType.getUid().getPath();
+        return "item_application".equals(path) || "deploying".equals(path);
+    }
+
+    @Override public boolean isKeepHeldItem() { return keepHeldItem; }
+
+    @Override public void setKeepHeldItem(boolean value) { this.keepHeldItem = value; }
 
     @Override
     public SlotKind slotKind(int i) {
@@ -261,6 +301,16 @@ public final class GenericDraft implements RecipeDraft {
             // 下のコメント skeleton にフォールバック
             String s = DIV.credit.client.draft.mek.MekanismKubeJSEmitter.emit(
                 recipeId, jeiType.getUid(), slots, kinds);
+            if (s != null) return s;
+        }
+        if (isIe) {
+            String s = DIV.credit.client.draft.ie.IEKubeJSEmitter.emit(
+                recipeId, jeiType.getUid(), slots, kinds);
+            if (s != null) return s;
+        }
+        if (isCreate) {
+            String s = DIV.credit.client.draft.create.CreateKubeJSEmitter.emit(
+                recipeId, jeiType.getUid(), slots, kinds, heatLevel, keepHeldItem);
             if (s != null) return s;
         }
         return emitCommentSkeleton(recipeId);

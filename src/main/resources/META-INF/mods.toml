@@ -94,3 +94,19 @@ mandatory = false
 versionRange = "*"
 ordering = "AFTER"
 side = "CLIENT"
+
+# Immersive Engineering — IE レシピ対応用。無くてもMOD本体は動く。
+[[dependencies."${mod_id}"]]
+modId = "immersiveengineering"
+mandatory = false
+versionRange = "*"
+ordering = "AFTER"
+side = "CLIENT"
+
+# Create — Create レシピ対応用。無くてもMOD本体は動く。
+[[dependencies."${mod_id}"]]
+modId = "create"
+mandatory = false
+versionRange = "*"
+ordering = "AFTER"
+side = "CLIENT"

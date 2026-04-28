@@ -86,7 +86,7 @@ public class DraftStore {
     private RecipeDraft create(IRecipeCategory<?> cat) {
         RecipeType<?> rt = cat.getRecipeType();
         // 明示的に対応外（情報ページや診断系。レシピではないので編集不可）
-        if (EXPLICIT_UNSUPPORTED.contains(rt.getUid().toString())) return null;
+        if (EXPLICIT_UNSUPPORTED.containsKey(rt.getUid().toString())) return null;
         if (RecipeTypes.CRAFTING.equals(rt)) {
             CraftingDraft cd = new CraftingDraft();
             cd.setMode(craftingVariant == CraftingVariant.SHAPED
@@ -103,6 +103,10 @@ public class DraftStore {
         boolean isGt  = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
         // Mek システム判定（modId 不問。category が BaseRecipeCategory 派生）
         boolean isMek = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
+        // IE システム判定（modId 不問。category が IERecipeCategory 派生）
+        boolean isIe  = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
+        // Create システム判定（modId 不問。category が CreateRecipeCategory 派生）
+        boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
 
         // hand-written drafts (GT compressor/assembler, Mek pressurized_reaction) を優先
         if (isGt && ModList.get().isLoaded("gtceu")) {
@@ -113,12 +117,22 @@ public class DraftStore {
             RecipeDraft d = DIV.credit.client.draft.mek.MekanismSupport.tryCreate(cat);
             if (d != null) return d;
         }
+        if (isIe && ModList.get().isLoaded("immersiveengineering")) {
+            RecipeDraft d = DIV.credit.client.draft.ie.IESupport.tryCreate(cat);
+            if (d != null) return d;
+        }
+        if (isCreate && ModList.get().isLoaded("create")) {
+            RecipeDraft d = DIV.credit.client.draft.create.CreateSupport.tryCreate(cat);
+            if (d != null) return d;
+        }
         // GenericDraft 受け入れ条件:
         //   - vanilla minecraft
         //   - GT システム (gtceu 派生 mod 含む: StarT-Core 等)
         //   - Mek システム (Mek extension 含む: EvolvedMekanism 等)
+        //   - IE システム (現状は IE 本体のみ、addon あれば自動対応)
+        //   - Create システム
         String ns = rt.getUid().getNamespace();
-        if (!"minecraft".equals(ns) && !isGt && !isMek) return null;
+        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate) return null;
         var rt2 = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
         if (rt2 != null) {
             return GenericDraft.tryCreate(cat, rt2.getRecipeManager());
@@ -126,23 +140,53 @@ public class DraftStore {
         return null;
     }
 
-    /** 明示的に対応外（情報・診断ページや KubeJS schema 不在で編集しても dump できないもの）。 */
-    private static final java.util.Set<String> EXPLICIT_UNSUPPORTED = java.util.Set.of(
-        "gtceu:multiblock_info",                       // マルチブロック情報
-        "gtceu:bedrock_fluid_diagram",                 // 岩盤液体図
-        "gtceu:bedrock_ore_diagram",                   // 岩盤鉱石図
-        "gtceu:ore_vein_diagram",                      // 鉱脈図
-        "gtceu:ore_processing_diagram",                // 鉱石処理工程図
+    /** 明示的に対応外（情報・診断ページや KubeJS schema 不在で編集しても dump できないもの）。
+     *  値は ? icon ホバー tooltip 用の理由分類。 */
+    private static final java.util.Map<String, UnsupportedReason> EXPLICIT_UNSUPPORTED;
+    static {
+        java.util.Map<String, UnsupportedReason> m = new java.util.HashMap<>();
+        // GT 情報・診断ページ
+        m.put("gtceu:multiblock_info",                  UnsupportedReason.VIEWER);
+        m.put("gtceu:bedrock_fluid_diagram",            UnsupportedReason.VIEWER);
+        m.put("gtceu:bedrock_ore_diagram",              UnsupportedReason.VIEWER);
+        m.put("gtceu:ore_vein_diagram",                 UnsupportedReason.VIEWER);
+        m.put("gtceu:ore_processing_diagram",           UnsupportedReason.VIEWER);
+        m.put("gtceu:programmed_circuit",               UnsupportedReason.VIEWER);
+        m.put("ldlib:test_category",                    UnsupportedReason.INTERNAL);
         // Mek 系で KubeJS schema が存在しないため編集しても dump 不能
-        "mekanism:sps_casing",                         // SPS (Supercritical Phase Shifter)
-        "mekanism:boiler_casing",                      // ボイラー
-        "mekanism:nutritional_liquifier",              // 栄養液化機
-        "mekanismgenerators:fission",                  // Mek Generators 核分裂炉
-        "evolvedmekanism:thermalizer",                 // EvolvedMek サーマライザー (MELTER)
-        "evolvedmekanism:solidification_chamber",      // EvolvedMek 固化チャンバー
-        "gtceu:programmed_circuit",       // プログラム回路ピッカー
-        "ldlib:test_category"             // LDLib テスト用
-    );
+        m.put("mekanism:sps_casing",                    UnsupportedReason.NO_KUBEJS);
+        m.put("mekanism:boiler_casing",                 UnsupportedReason.NO_KUBEJS);
+        m.put("mekanism:nutritional_liquifier",         UnsupportedReason.NO_KUBEJS);
+        m.put("mekanismgenerators:fission",             UnsupportedReason.NO_KUBEJS);
+        m.put("evolvedmekanism:thermalizer",            UnsupportedReason.NO_KUBEJS);
+        m.put("evolvedmekanism:solidification_chamber", UnsupportedReason.NO_KUBEJS);
+        // IE 系で編集対象外
+        m.put("immersiveengineering:blast_furnace_fuel", UnsupportedReason.VIEWER);
+        m.put("immersiveengineering:fertilizer",         UnsupportedReason.VIEWER);
+        m.put("immersiveengineering:blueprint",          UnsupportedReason.COMPLEX);
+        m.put("immersiveengineering:arc_recycling",      UnsupportedReason.DYNAMIC);
+        m.put("immersiveengineering:cloche",             UnsupportedReason.COMPLEX);
+        // Create 系で vanilla recipe を Create 機械で表示してるだけ
+        m.put("create:fan_smoking",                     UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:fan_blasting",                    UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:block_cutting",                   UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:automatic_shaped",                UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:automatic_shapeless",             UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:automatic_packing",               UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:automatic_brewing",               UnsupportedReason.VANILLA_ROUTED);
+        m.put("create:mystery_conversion",              UnsupportedReason.DYNAMIC);
+        m.put("create:basin",                           UnsupportedReason.INTERNAL);
+        // Create defer (今後対応予定だが Tier-A では未対応)
+        m.put("create:mechanical_crafting",             UnsupportedReason.DEFERRED);
+        m.put("create:sequenced_assembly",              UnsupportedReason.DEFERRED);
+        EXPLICIT_UNSUPPORTED = java.util.Collections.unmodifiableMap(m);
+    }
+
+    /** UID から ? icon hover 用の reason を引く。EXPLICIT_UNSUPPORTED に無ければ null。 */
+    @Nullable
+    public static UnsupportedReason getUnsupportedReason(String uid) {
+        return EXPLICIT_UNSUPPORTED.get(uid);
+    }
 
     public boolean isCraftingCategory(IRecipeCategory<?> cat) {
         return cat != null && RecipeTypes.CRAFTING.equals(cat.getRecipeType());
