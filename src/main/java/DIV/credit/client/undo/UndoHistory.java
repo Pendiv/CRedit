@@ -89,6 +89,8 @@ public final class UndoHistory {
             h = h * 31 + (v.length >= 1 ? v[0] : 0);
             h = h * 31 + (v.length >= 2 ? v[1] : 0);
         }
+        // v2.0.0 edit mode state
+        h = h * 31 + Snapshot.editModeHash();
         return h;
     }
 }

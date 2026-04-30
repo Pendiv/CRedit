@@ -54,6 +54,10 @@ public class CraftPatternCommand {
         LiteralArgumentBuilder<CommandSourceStack> open = Commands.literal("craftpattern")
             .executes(CraftPatternCommand::openBuilder);
         event.getDispatcher().register(open);
+
+        // v2.2.2 short alias /crp
+        event.getDispatcher().register(
+            Commands.literal("crp").executes(CraftPatternCommand::openBuilder));
     }
 
     private static int openBuilder(CommandContext<CommandSourceStack> ctx) {

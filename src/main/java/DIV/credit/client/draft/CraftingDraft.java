@@ -2,9 +2,11 @@ package DIV.credit.client.draft;
 
 import DIV.credit.Credit;
 import mezz.jei.api.constants.RecipeTypes;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.core.NonNullList;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
@@ -58,6 +60,58 @@ public class CraftingDraft implements RecipeDraft {
     @Override
     public Recipe<?> toRecipeInstance() {
         return mode == Mode.SHAPED ? buildShaped() : buildShapeless();
+    }
+
+    /**
+     * 既存 ShapedRecipe / ShapelessRecipe の内容を 3x3 グリッド + 出力に流し込む。
+     * Ingredient に複数候補ある時は最初の ItemStack を採用。
+     */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        Object recipe = layout.getRecipe();
+        if (recipe instanceof ShapedRecipe sr) {
+            for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
+            slots[IDX_OUTPUT] = stackToSpec(sr.getResultItem(net.minecraft.core.RegistryAccess.EMPTY));
+            int w = sr.getWidth(), h = sr.getHeight();
+            NonNullList<Ingredient> ings = sr.getIngredients();
+            for (int r = 0; r < h; r++) {
+                for (int c = 0; c < w; c++) {
+                    Ingredient ing = ings.get(r * w + c);
+                    int gridIdx = IDX_INPUT_0 + r * WIDTH + c;
+                    slots[gridIdx] = ingredientToSpec(ing);
+                }
+            }
+            mode = Mode.SHAPED;
+            return true;
+        }
+        if (recipe instanceof ShapelessRecipe slr) {
+            for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
+            slots[IDX_OUTPUT] = stackToSpec(slr.getResultItem(net.minecraft.core.RegistryAccess.EMPTY));
+            NonNullList<Ingredient> ings = slr.getIngredients();
+            for (int i = 0; i < ings.size() && i < INPUT_COUNT; i++) {
+                slots[IDX_INPUT_0 + i] = ingredientToSpec(ings.get(i));
+            }
+            mode = Mode.SHAPELESS;
+            return true;
+        }
+        Credit.LOGGER.info("[CraftPattern] CraftingDraft.loadFromRecipe: unsupported recipe class {}",
+            recipe == null ? "null" : recipe.getClass().getName());
+        return false;
+    }
+
+    private static IngredientSpec stackToSpec(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return IngredientSpec.EMPTY;
+        return new IngredientSpec.Item(stack.copy());
+    }
+
+    /** Ingredient.getItems() の最初を採用。空なら EMPTY。Tag 検出は今回省略 (Item で十分動く)。 */
+    private static IngredientSpec ingredientToSpec(Ingredient ing) {
+        if (ing == null || ing.isEmpty()) return IngredientSpec.EMPTY;
+        ItemStack[] matches = ing.getItems();
+        if (matches.length == 0) return IngredientSpec.EMPTY;
+        ItemStack first = matches[0];
+        if (first.isEmpty()) return IngredientSpec.EMPTY;
+        return new IngredientSpec.Item(first.copy());
     }
 
     @Override

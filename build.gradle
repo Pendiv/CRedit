@@ -182,6 +182,10 @@ dependencies {
     // 将来 hand-written draft で直接参照したくなった時のために compile dep として置いておく)。
     implementation fg.deobf("curse.maven:create-328085:7178761")
 
+    // DE / AE2 等の追加 mod は dev runtime に入れていない。
+    // 理由: production jar 直置きは Mixin SRG 名解決失敗、fg.deobf は初回フェッチ ~7 分。
+    // 検証は本番 modpack (GTCsoloEU/run/mods/) 側で行う。
+
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 

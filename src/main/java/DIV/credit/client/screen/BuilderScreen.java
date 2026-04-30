@@ -57,12 +57,25 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             new ResourceLocation(Credit.MODID, "ui/setting.png");
     private static final ResourceLocation QUESTION_TEX =
             new ResourceLocation(Credit.MODID, "ui/question.png");
+    /** v2.0.0 編集モード badge。? icon と同じ位置に出す。 */
+    private static final ResourceLocation CHOIS_TEX =
+            new ResourceLocation(Credit.MODID, "ui/chois.png");
+    public static final int CHOIS_W = 16;
+    public static final int CHOIS_H = 16;
 
     /** Static so drafts and last-selected category persist across screen open/close (until game exit). */
     private static final DraftStore DRAFT_STORE = new DraftStore();
     private static IRecipeCategory<?> lastCategory;
     /** MAX persistence: ゲームセッションで一度だけファイルから復元する。 */
     private static boolean persistenceLoaded = false;
+    /** v2.1.0 staging.dat はゲーム起動毎 1 回読む（モード問わず常に保持）。 */
+    private static boolean stagingLoaded = false;
+
+    // ─────── v2.0.0 編集モード state（プロセスグローバル、JEI からの遷移で set）───────
+    /** 編集中のオリジナルレシピ ID。null なら通常モード。 */
+    private static String editModeOrigId = null;
+    /** 編集中のオリジナルカテゴリ UID（このカテゴリ以外に切替したら edit mode 解除）。 */
+    private static String editModeOrigCategoryUid = null;
 
     // Undo state
     private long lastSnapshotHash = 0;
@@ -90,6 +103,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private int tagBarY;
 
     private int toggleX = -1, toggleY, toggleW, toggleH;
+    private int tierX = -1, tierY, tierW, tierH;
     private int dumpX   = -1, dumpY;
     private int settingsX = -1, settingsY;
     private int questionX = -1, questionY;
@@ -122,6 +136,34 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         Credit.LOGGER.info("[CraftPattern] Cleared all draft data (DRAFT_STORE + energy state + lastCategory)");
     }
 
+    // ─────── v2.0.0 編集モード API ───────
+    /** EditHandler から呼ぶ：edit mode 開始 + 次回 BuilderScreen open 時の lastCategory も set。 */
+    public static void enterEditMode(String origRecipeId, IRecipeCategory<?> category) {
+        editModeOrigId = origRecipeId;
+        editModeOrigCategoryUid = category.getRecipeType().getUid().toString();
+        lastCategory = category;
+        Credit.LOGGER.info("[CraftPattern] EDIT mode entered: orig={} category={}",
+            origRecipeId, editModeOrigCategoryUid);
+    }
+    /** edit mode 解除（カテゴリ切替 / dump 完了 / undo で呼ばれる）。 */
+    public static void exitEditMode() {
+        if (editModeOrigId != null) {
+            Credit.LOGGER.info("[CraftPattern] EDIT mode exited (was: {})", editModeOrigId);
+        }
+        editModeOrigId = null;
+        editModeOrigCategoryUid = null;
+    }
+    public static boolean isEditMode() { return editModeOrigId != null; }
+    public static @Nullable String getEditModeOrigId() { return editModeOrigId; }
+    public static @Nullable String getEditModeOrigCategoryUid() { return editModeOrigCategoryUid; }
+    /** Snapshot.applyTo 専用: UID 直接 set。category インスタンスは要らない。 */
+    public static void restoreEditModeState(String origId, String origCategoryUid) {
+        editModeOrigId = origId;
+        editModeOrigCategoryUid = origCategoryUid;
+    }
+    /** EditHandler が draft 取得 + loadFromRecipe するため expose。 */
+    public static DraftStore getDraftStore() { return DRAFT_STORE; }
+
     @Override
     protected void init() {
         super.init();
@@ -131,6 +173,13 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             if (DIV.credit.CreditConfig.EDIT_PERSISTENCE.get() == DIV.credit.CreditConfig.EditPersistence.MAX) {
                 DIV.credit.client.draft.DraftPersistence.load(DRAFT_STORE);
             }
+        }
+        // v2.2.6: staging + history は world join 時に ImmediateHistorySession.Hook で load される。
+        // BuilderScreen.init 起動時は冗長だが、念のため stagingLoaded ガードで 1 回だけ走る fallback。
+        if (!stagingLoaded) {
+            stagingLoaded = true;
+            DIV.credit.client.staging.StagingPersistence.load();
+            DIV.credit.client.history.HistoryPersistence.load();
         }
         int minInventoryTop = TOP_MARGIN + TAB_AREA_HEIGHT + TagBar.H + 10;
         this.topPos = Math.max(minInventoryTop, this.height - this.imageHeight - BOTTOM_MARGIN);
@@ -328,6 +377,16 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     }
 
     private void applyCategory(IRecipeCategory<?> cat) {
+        // edit mode: 元カテゴリ以外に切替したら edit mode 解除
+        if (isEditMode() && cat != null
+            && !cat.getRecipeType().getUid().toString().equals(editModeOrigCategoryUid)) {
+            // v2.0.9: 設定で「保持」OFF (default) なら、元 edit カテゴリの grid 内容をクリア
+            //         → 後で同カテゴリに戻った時に「load 残骸」で誤レシピを作らないように
+            if (!DIV.credit.CreditConfig.PRESERVE_EDIT_GRID_ON_SWITCH.get()) {
+                clearOrigEditCategoryDraft();
+            }
+            exitEditMode();
+        }
         this.currentCategory = cat;
         lastCategory = cat;
         // カテゴリ遷移で ? tooltip 自動 close
@@ -377,20 +436,87 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             return;
         }
         String recipeId = autoRecipeId(draft);
-        ScriptWriter.DumpResult result = ScriptWriter.dump(draft, recipeId);
-        Component msg;
-        if (result instanceof ScriptWriter.DumpResult.Success s) {
-            msg = Component.literal("[CraftPattern] " + s.message()).withStyle(ChatFormatting.GREEN);
-        } else if (result instanceof ScriptWriter.DumpResult.Fallback f) {
-            msg = Component.literal("[CraftPattern] " + f.message()).withStyle(ChatFormatting.YELLOW);
+        boolean wasEdit = isEditMode();
+        // v2.1.0: ScriptWriter 直接呼出 → StagingArea.stage 経由に変更。
+        // push されるまで実ファイルは触らない。
+        String code;
+        String origForLog;
+        String modid;
+        ScriptWriter.OperationKind opKind;
+        if (wasEdit) {
+            code = ScriptWriter.buildEditCode(draft, editModeOrigId, recipeId);
+            origForLog = editModeOrigId;
+            modid = ScriptWriter.editModid(draft, editModeOrigId);
+            opKind = ScriptWriter.OperationKind.EDIT;
         } else {
-            msg = Component.literal("[CraftPattern] " + result.message()).withStyle(ChatFormatting.RED);
+            code = ScriptWriter.buildAddCode(draft, recipeId);
+            origForLog = null;
+            modid = draft.recipeType().getUid().getNamespace();
+            opKind = ScriptWriter.OperationKind.ADD;
         }
-        chat(msg);
-        if (!(result instanceof ScriptWriter.DumpResult.Failure)) {
-            chat(Component.literal("[CraftPattern] Run /reload (or /kubejs reload server_scripts) to apply.")
-                .withStyle(ChatFormatting.GRAY));
-            playClick();
+        if (code == null) {
+            chat(Component.literal("[CraftPattern] Draft is empty (need at least output + relevant inputs)")
+                .withStyle(ChatFormatting.RED));
+            return;
+        }
+        // v2.2.0 immediate apply 判定: 該当 kind が即時適応対象なら staging を介さず直接書き込み
+        if (DIV.credit.CreditConfig.shouldApplyImmediately(opKind)) {
+            DIV.credit.client.io.ScriptWriter.DumpResult r =
+                DIV.credit.client.io.ScriptWriter.writeStagedCode(opKind, modid, code);
+            if (r instanceof DIV.credit.client.io.ScriptWriter.DumpResult.Failure f) {
+                chat(Component.literal("[CraftPattern] " + f.message()).withStyle(ChatFormatting.RED));
+                return;
+            }
+            String filePath = r.path() != null ? r.path().toString() : null;
+            String jeiCatUid = draft.recipeType().getUid().toString();
+            DIV.credit.client.history.ImmediateHistorySession.INSTANCE.addItem(
+                new DIV.credit.client.history.HistoryEntry.Item(opKind, modid, recipeId, filePath, true, jeiCatUid));
+            chat(Component.translatable("gui.credit.immediate.applied",
+                opKind.name(), recipeId).withStyle(ChatFormatting.GOLD));
+            chat(Component.translatable("gui.credit.dump.reload_hint").withStyle(ChatFormatting.GRAY));
+        } else {
+            String jeiCategoryUid = draft.recipeType().getUid().toString();
+            DIV.credit.client.staging.StagingArea.INSTANCE.stage(opKind, modid, recipeId, origForLog, code, jeiCategoryUid);
+            DIV.credit.client.staging.StagingPersistence.save();
+            chat(Component.translatable("gui.credit.staging.staged",
+                opKind.name(), recipeId).withStyle(ChatFormatting.AQUA));
+            chat(Component.translatable("gui.credit.staging.commit_hint")
+                .withStyle(ChatFormatting.DARK_GRAY));
+        }
+        playClick();
+        if (wasEdit) {
+            exitEditMode();
+            clearCurrentDraft(draft);
+        }
+    }
+
+    /** draft の全 slot を EMPTY に。numericFields は draft 側 default を維持。 */
+    private void clearCurrentDraft(RecipeDraft draft) {
+        for (int i = 0; i < draft.slotCount(); i++) {
+            draft.setSlot(i, DIV.credit.client.draft.IngredientSpec.EMPTY);
+        }
+        recipeArea.rebuild();
+    }
+
+    /**
+     * v2.0.9: edit mode 元カテゴリの draft slot を全部 EMPTY にする。
+     * DRAFT_STORE 内の key は <recipeType uid> あるいは <uid>|VARIANT (crafting のみ)。
+     */
+    private void clearOrigEditCategoryDraft() {
+        if (editModeOrigCategoryUid == null) return;
+        String prefix = editModeOrigCategoryUid;
+        for (var entry : DRAFT_STORE.snapshotDrafts().entrySet()) {
+            String key = entry.getKey();
+            if (!(key.equals(prefix) || key.startsWith(prefix + "|"))) continue;
+            RecipeDraft d = entry.getValue();
+            for (int i = 0; i < d.slotCount(); i++) {
+                d.setSlot(i, DIV.credit.client.draft.IngredientSpec.EMPTY);
+            }
+            // GT cleanroom も剥がす (再訪時に予期しない要件が残らないよう)
+            if (d instanceof DIV.credit.client.draft.GenericDraft gd) {
+                gd.setCleanroomType(null);
+            }
+            Credit.LOGGER.info("[CraftPattern] Cleared edit-mode draft slots for {}", key);
         }
     }
 
@@ -434,6 +560,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
         renderModeToggle(g, mouseX, mouseY);
         renderUnsupportedNotice(g);
+        renderJeiViewHint(g, mouseX, mouseY);
+        renderEditModeBadge(g, mouseX, mouseY);
+        renderTierToggle(g, mouseX, mouseY);
         renderNumberLabels(g);
         renderDumpButton(g, mouseX, mouseY);
         renderSettingsButton(g, mouseX, mouseY);
@@ -482,6 +611,74 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         int bg = hover ? 0xCC404060 : 0x88202040;
         g.fill(toggleX, toggleY, toggleX + toggleW, toggleY + toggleH, bg);
         g.drawString(font, label, toggleX + 2, toggleY + 2, hover ? 0xFFFFFF55 : 0xFFFFFFFF, false);
+    }
+
+    /**
+     * DE FusionCraftingDraft の tier toggle: settings の左に「[Wyvern]」等を tier 色で。
+     * 左クリで次、Shift+左クリで前へ cycle。
+     */
+    private void renderTierToggle(GuiGraphics g, int mouseX, int mouseY) {
+        tierX = -1;
+        RecipeDraft draft = recipeArea.getDraft();
+        if (draft == null || !draft.canCycleTier()) return;
+        String label = "[" + draft.getTierLabel() + "]";
+        tierW = font.width(label) + 4;
+        tierH = font.lineHeight + 2;
+        // settings の左側、[Shaped]toggle と同位置（DE は crafting じゃないので衝突なし）
+        tierX = leftPos + imageWidth - tierW - SETTINGS_W - 6;
+        tierY = recipeAreaTop + 2;
+        boolean hover = mouseX >= tierX && mouseX < tierX + tierW
+                     && mouseY >= tierY && mouseY < tierY + tierH;
+        int bg = hover ? 0xCC404060 : 0x88202040;
+        g.fill(tierX, tierY, tierX + tierW, tierY + tierH, bg);
+        g.drawString(font, label, tierX + 2, tierY + 2, draft.getTierColor(), false);
+        if (hover) {
+            g.renderTooltip(font, Component.translatable("gui.credit.tier.hint"), mouseX, mouseY);
+        }
+    }
+
+    /** 編集モード時に chois.png を ? icon と同じ位置に出す。hover で原 ID tooltip。 */
+    private void renderEditModeBadge(GuiGraphics g, int mouseX, int mouseY) {
+        if (!isEditMode()) return;
+        int x = leftPos + 2;
+        int y = recipeAreaTop + 2;
+        boolean hover = mouseX >= x && mouseX < x + CHOIS_W
+                     && mouseY >= y && mouseY < y + CHOIS_H;
+        if (hover) g.fill(x - 1, y - 1, x + CHOIS_W + 1, y + CHOIS_H + 1, 0x66FFFFFF);
+        g.blit(CHOIS_TEX, x, y, 0, 0, CHOIS_W, CHOIS_H, CHOIS_W, CHOIS_H);
+        if (hover) {
+            g.renderComponentTooltip(font, java.util.List.of(
+                Component.translatable("gui.credit.edit.badge").withStyle(ChatFormatting.WHITE),
+                Component.literal(String.valueOf(editModeOrigId)).withStyle(ChatFormatting.GRAY)
+            ), mouseX, mouseY);
+        }
+    }
+
+    /**
+     * recipe area 上部中央に「JEIで表示」ヒント（settings と同じ高さ）。
+     * 未対応カテゴリ時は renderUnsupportedNotice 側を出すので、こちらは draft != null 時のみ。
+     * ホバー時のみ「Shift+クリックで表示」tooltip を出して通常時の横幅を抑える。
+     */
+    private void renderJeiViewHint(GuiGraphics g, int mouseX, int mouseY) {
+        if (currentCategory == null || recipeArea.getDraft() == null) return;
+        Component msg = Component.translatable("gui.credit.hint.jei_view");
+        int tw = font.width(msg);
+        // crafting カテゴリは [Shaped]/[Shapeless] toggle が右上にある + ? と被らないよう
+        // 左寄せ（chois badge / ? icon の右）。それ以外は中央寄せ。
+        int tx;
+        if (DRAFT_STORE.isCraftingCategory(currentCategory)) {
+            tx = leftPos + 2 + QUESTION_W + 4;  // ? icon の右、4px gap
+        } else {
+            tx = leftPos + (imageWidth - tw) / 2;
+        }
+        int ty = recipeAreaTop + 2;
+        boolean hover = mouseX >= tx - 3 && mouseX < tx + tw + 3
+                     && mouseY >= ty - 2 && mouseY < ty + font.lineHeight + 1;
+        g.fill(tx - 3, ty - 2, tx + tw + 3, ty + font.lineHeight + 1, hover ? 0x88000000 : 0x44000000);
+        g.drawString(font, msg, tx, ty, hover ? 0xFFCCCCCC : 0xFF777777, false);
+        if (hover) {
+            g.renderTooltip(font, Component.translatable("gui.credit.hint.jei_view.shift"), mouseX, mouseY);
+        }
     }
 
     private void renderUnsupportedNotice(GuiGraphics g) {
@@ -637,11 +834,31 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     public boolean mouseClicked(double mx, double my, int button) {
         if (tabBar != null && tabBar.mouseClicked(mx, my, button)) return true;
 
+        // Shift+left-click on recipe area → open JEI for current category (sets OriginTracker)
+        if (button == 0 && Screen.hasShiftDown() && currentCategory != null
+            && recipeArea.isInside(mx, my)) {
+            if (DIV.credit.client.jei.JeiNavigation.openCategory(currentCategory)) {
+                playClick();
+                return true;
+            }
+        }
+
         if (button == 0 && toggleX >= 0
             && mx >= toggleX && mx < toggleX + toggleW
             && my >= toggleY && my < toggleY + toggleH) {
             toggleCraftingMode();
             return true;
+        }
+        // DE tier toggle: 左クリ→次、Shift+左クリ→前
+        if (button == 0 && tierX >= 0
+            && mx >= tierX && mx < tierX + tierW
+            && my >= tierY && my < tierY + tierH) {
+            RecipeDraft draft = recipeArea.getDraft();
+            if (draft != null && draft.canCycleTier()) {
+                draft.cycleTier(!Screen.hasShiftDown());
+                playClick();
+                return true;
+            }
         }
         if (button == 0 && dumpX >= 0
             && mx >= dumpX && mx < dumpX + DUMP_W
@@ -697,9 +914,23 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             playClick();
             return true;
         }
-        // Tag bar: namespace toggle
+        // Tag bar: namespace toggle (Shift+左クリで GT cleanroom mode toggle)
         if (button == 0 && tagBar.isOverNsSlot(mx, my)) {
-            tagBar.toggleNamespace();
+            if (Screen.hasShiftDown()) {
+                tagBar.toggleCleanroomMode();
+            } else {
+                tagBar.toggleNamespace();
+            }
+            playClick();
+            return true;
+        }
+        // cleanroom header click → dropdown 開閉
+        if (tagBar.handleCleanroomHeaderClick(mx, my, button)) {
+            playClick();
+            return true;
+        }
+        // cleanroom dropdown click → 選択
+        if (tagBar.handleCleanroomDropdownClick(mx, my, button)) {
             playClick();
             return true;
         }
@@ -773,6 +1004,27 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             }
         }
 
+        // v2.0.8: cleanroom marker を recipe area 内に drop → draft.cleanroomType に適用
+        if (button == 0 && DIV.credit.client.tag.TagBar.isCleanroomMarker(ghostCursor)
+            && recipeArea.isInside(mx, my)) {
+            String name = DIV.credit.client.tag.TagBar.readCleanroomMarker(ghostCursor);
+            RecipeDraft draft = recipeArea.getDraft();
+            if (draft instanceof DIV.credit.client.draft.GenericDraft gd) {
+                String value = DIV.credit.client.tag.TagBar.CLEANROOM_NONE.equals(name) ? null : name;
+                gd.setCleanroomType(value);
+                recipeArea.rebuild();
+                Component msg = (value == null)
+                    ? Component.translatable("gui.credit.cleanroom.cleared").withStyle(ChatFormatting.YELLOW)
+                    : Component.translatable("gui.credit.cleanroom.set", value).withStyle(ChatFormatting.AQUA);
+                chat(msg);
+            } else {
+                chat(Component.translatable("gui.credit.cleanroom.unsupported")
+                    .withStyle(ChatFormatting.RED));
+            }
+            ghostCursor = ItemStack.EMPTY;
+            playClick();
+            return true;
+        }
         if (recipeArea.mouseClicked(mx, my, button, ghostCursor)) return true;
 
         boolean overInvSlot = isOverInventorySlot(mx, my);

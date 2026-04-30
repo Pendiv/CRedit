@@ -531,6 +531,12 @@ public class RecipeArea {
      * - Ctrl+右 → このスロットだけクリア
      * - Shift+右 → 全スロットクリア
      */
+    /** RecipeArea の矩形に mx,my が含まれるか。Shift+click 等の hit-test 用。 */
+    public boolean isInside(double mx, double my) {
+        return mx >= areaLeft && mx < areaLeft + areaWidth
+            && my >= areaTop  && my < areaTop  + areaHeight;
+    }
+
     public boolean mouseClicked(double mx, double my, int button, ItemStack cursor) {
         if (drawable == null) return false;
         Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mx, my);

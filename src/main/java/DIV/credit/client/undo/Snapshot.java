@@ -36,11 +36,16 @@ public final class Snapshot {
 
     public final Map<String, int[]> energyHelperByCategory;
 
+    /** v2.0.0 編集モード state（null なら通常モード）。 */
+    @Nullable public final String editModeOrigId;
+    @Nullable public final String editModeOrigCategoryUid;
+
     private Snapshot(Map<String, DraftState> drafts, DraftStore.CraftingVariant variant,
                      @Nullable String selectedCategoryUid,
                      IngredientSpec tagBarCfg, IngredientSpec tagBarFinder, String tagBarBoxValue,
                      IngredientSpec sbContent, long sbBaseAmount, int sbMultiplier,
-                     Map<String, int[]> energyHelperByCategory) {
+                     Map<String, int[]> energyHelperByCategory,
+                     @Nullable String editModeOrigId, @Nullable String editModeOrigCategoryUid) {
         this.draftStates = drafts;
         this.craftingVariant = variant;
         this.selectedCategoryUid = selectedCategoryUid;
@@ -51,6 +56,8 @@ public final class Snapshot {
         this.sbBaseAmount = sbBaseAmount;
         this.sbMultiplier = sbMultiplier;
         this.energyHelperByCategory = energyHelperByCategory;
+        this.editModeOrigId = editModeOrigId;
+        this.editModeOrigCategoryUid = editModeOrigCategoryUid;
     }
 
     public static Snapshot capture(DraftStore store, BuilderScreen screen) {
@@ -75,7 +82,9 @@ public final class Snapshot {
             stackBuilder.getContent(),
             stackBuilder.getBaseAmount(),
             stackBuilder.getMultiplier(),
-            energyMap
+            energyMap,
+            BuilderScreen.getEditModeOrigId(),
+            BuilderScreen.getEditModeOrigCategoryUid()
         );
     }
 
@@ -101,6 +110,20 @@ public final class Snapshot {
         tagBar.setBoxValue(tagBarBoxValue);
         var sb = screen.getStackBuilder();
         sb.restoreState(sbContent, sbBaseAmount, sbMultiplier);
+        // 5. v2.0.0 edit mode state を復元
+        if (editModeOrigId != null && editModeOrigCategoryUid != null) {
+            // category 引数として現在 category を作成できないので、UID 直接 set 用 helper
+            BuilderScreen.restoreEditModeState(editModeOrigId, editModeOrigCategoryUid);
+        } else {
+            BuilderScreen.exitEditMode();
+        }
+    }
+
+    /** UndoHistory.computeHash で edit mode state も hash に含める。 */
+    public static long editModeHash() {
+        String id  = BuilderScreen.getEditModeOrigId();
+        String cat = BuilderScreen.getEditModeOrigCategoryUid();
+        return ((id == null ? 0 : id.hashCode()) * 31L) + (cat == null ? 0 : cat.hashCode());
     }
 
     /** UndoHistory.computeHash から呼ばれる。 */

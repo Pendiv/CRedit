@@ -107,7 +107,14 @@ public class DraftStore {
         boolean isIe  = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
         // Create システム判定（modId 不問。category が CreateRecipeCategory 派生）
         boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
+        // DE 判定（category UID = draconicevolution:fusion_crafting）
+        boolean isDe = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
 
+        // DE は最優先（fusion_crafting 専用 draft）
+        if (isDe && ModList.get().isLoaded("draconicevolution")) {
+            RecipeDraft d = DIV.credit.client.draft.de.DESupport.tryCreate(cat);
+            if (d != null) return d;
+        }
         // hand-written drafts (GT compressor/assembler, Mek pressurized_reaction) を優先
         if (isGt && ModList.get().isLoaded("gtceu")) {
             RecipeDraft d = DIV.credit.client.draft.gt.GTSupport.tryCreate(cat);
@@ -180,6 +187,30 @@ public class DraftStore {
         m.put("create:mechanical_crafting",             UnsupportedReason.DEFERRED);
         m.put("create:sequenced_assembly",              UnsupportedReason.DEFERRED);
         EXPLICIT_UNSUPPORTED = java.util.Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * 副作用なしで「このカテゴリを draft 化できるか」判定。JEI overlay の edit/delete ボタン表示条件に使う。
+     * create() のロジックを写すが draft 自体は作らない。
+     */
+    public static boolean isSupportedCategory(@Nullable IRecipeCategory<?> cat) {
+        if (cat == null) return false;
+        RecipeType<?> rt = cat.getRecipeType();
+        String uid = rt.getUid().toString();
+        if (EXPLICIT_UNSUPPORTED.containsKey(uid)) return false;
+        if (RecipeTypes.CRAFTING.equals(rt)
+            || RecipeTypes.SMELTING.equals(rt)
+            || RecipeTypes.BLASTING.equals(rt)
+            || RecipeTypes.SMOKING.equals(rt)
+            || RecipeTypes.CAMPFIRE_COOKING.equals(rt)
+            || RecipeTypes.STONECUTTING.equals(rt)) return true;
+        boolean isGt     = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
+        boolean isMek    = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
+        boolean isIe     = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
+        boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
+        boolean isDe     = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
+        if (isGt || isMek || isIe || isCreate || isDe) return true;
+        return "minecraft".equals(rt.getUid().getNamespace());
     }
 
     /** UID から ? icon hover 用の reason を引く。EXPLICIT_UNSUPPORTED に無ければ null。 */

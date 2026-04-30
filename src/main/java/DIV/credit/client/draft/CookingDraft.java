@@ -2,8 +2,10 @@ package DIV.credit.client.draft;
 
 import DIV.credit.Credit;
 import mezz.jei.api.constants.RecipeTypes;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.BlastingRecipe;
 import net.minecraft.world.item.crafting.CampfireCookingRecipe;
@@ -83,6 +85,32 @@ public class CookingDraft implements RecipeDraft {
         if (s == null) s = IngredientSpec.EMPTY;
         if (isOutputSlot(i) && s instanceof IngredientSpec.Tag) return;
         slots[i] = s;
+    }
+
+    /** AbstractCookingRecipe (smelting/blasting/smoking/campfire 共通) を 3 スロットに反映。 */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        Object recipe = layout.getRecipe();
+        if (!(recipe instanceof AbstractCookingRecipe acr)) {
+            Credit.LOGGER.info("[CraftPattern] CookingDraft.loadFromRecipe: not AbstractCookingRecipe ({})",
+                recipe == null ? "null" : recipe.getClass().getName());
+            return false;
+        }
+        for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
+        var ings = acr.getIngredients();
+        if (!ings.isEmpty()) {
+            ItemStack[] matches = ings.get(0).getItems();
+            if (matches.length > 0 && !matches[0].isEmpty()) {
+                slots[IDX_INPUT] = new IngredientSpec.Item(matches[0].copy());
+            }
+        }
+        ItemStack out = acr.getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
+        if (out != null && !out.isEmpty()) {
+            slots[IDX_OUTPUT] = new IngredientSpec.Item(out.copy());
+        }
+        this.xp          = acr.getExperience();
+        this.cookingTime = acr.getCookingTime();
+        return true;
     }
 
     @Override

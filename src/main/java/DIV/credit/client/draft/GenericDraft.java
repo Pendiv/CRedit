@@ -47,6 +47,8 @@ public final class GenericDraft implements RecipeDraft {
     private long durationValue;
     private long eutValue;
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
+    /** v2.0.8 GT cleanroom requirement (e.g. "cleanroom" / "sterile_cleanroom" / null = none). */
+    @Nullable private String cleanroomType = null;
 
     private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
                          boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
@@ -136,17 +138,21 @@ public final class GenericDraft implements RecipeDraft {
                 && net.minecraftforge.fml.ModList.get().isLoaded("create");
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
+            String cleanroomInit = null;
             if (isGt) {
                 var meta = DIV.credit.client.draft.gt.GTSupport.probeMetadata(sample.get(), rt.getUid());
                 durationInit = meta.duration;
                 eutInit = meta.eut;
                 intDataInit.putAll(meta.intData);
-                Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={}",
-                    rt.getUid(), durationInit, eutInit, intDataInit);
+                cleanroomInit = DIV.credit.client.draft.gt.GTSupport.probeCleanroom(sample.get());
+                Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={} cleanroom={}",
+                    rt.getUid(), durationInit, eutInit, intDataInit, cleanroomInit);
             }
             Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={}",
                 rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate);
-            return new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
+            GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
+            d.cleanroomType = cleanroomInit;
+            return d;
         } catch (Exception e) {
             Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
                 cat.getRecipeType().getUid(), e.toString());
@@ -202,6 +208,11 @@ public final class GenericDraft implements RecipeDraft {
         if (level != null) this.heatLevel = level;
     }
 
+    // ─── v2.0.8 cleanroom (GT のみ) ───
+    @Nullable public String getCleanroomType()                  { return cleanroomType; }
+    public void            setCleanroomType(@Nullable String s) { this.cleanroomType = (s == null || s.isEmpty()) ? null : s; }
+    public boolean         supportsCleanroom()                  { return isGt; }
+
     @Override
     public boolean canKeepHeldItem() {
         if (!isCreate) return false;
@@ -217,6 +228,86 @@ public final class GenericDraft implements RecipeDraft {
     public SlotKind slotKind(int i) {
         if (i < 0 || i >= kinds.length) return SlotKind.ITEM_INPUT;
         return kinds[i];
+    }
+
+    /**
+     * IRecipeLayoutDrawable の slot views を walk して、各 slot の displayed ingredient を draft に流し込む。
+     * Item / Fluid / Gas (Mek 系) を識別。複数候補は最初を採用。
+     * GT metadata (duration/EUt/intData) は recipe instance を probe して反映。
+     */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        try {
+            List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
+            int n = Math.min(views.size(), slots.length);
+            int loaded = 0;
+            for (int i = 0; i < n; i++) {
+                IngredientSpec spec = readSpecFromView(views.get(i));
+                if (!spec.isEmpty()) {
+                    slots[i] = spec;
+                    loaded++;
+                }
+            }
+            // GT metadata 反映
+            if (isGt) {
+                Object recipe = layout.getRecipe();
+                if (recipe instanceof net.minecraft.world.item.crafting.Recipe<?> mcr) {
+                    var meta = DIV.credit.client.draft.gt.GTSupport.probeMetadata(mcr, jeiType.getUid());
+                    this.durationValue = meta.duration;
+                    this.eutValue = meta.eut;
+                    this.intDataValues.clear();
+                    this.intDataValues.putAll(meta.intData);
+                    // v2.0.8: cleanroom 要件抽出
+                    this.cleanroomType = DIV.credit.client.draft.gt.GTSupport.probeCleanroom(mcr);
+                }
+            }
+            Credit.LOGGER.info("[CraftPattern] GenericDraft.loadFromRecipe {} → {}/{} slots",
+                jeiType.getUid(), loaded, n);
+            return loaded > 0;
+        } catch (Exception e) {
+            Credit.LOGGER.warn("[CraftPattern] GenericDraft.loadFromRecipe failed for {}: {}",
+                jeiType.getUid(), e.toString());
+            return false;
+        }
+    }
+
+    /** Slot view の displayed ingredient を IngredientSpec に変換。複数候補 ITypedIngredient のうち最初を採用。 */
+    private static IngredientSpec readSpecFromView(IRecipeSlotView view) {
+        var displayed = view.getDisplayedIngredient();
+        ITypedIngredient<?> ti;
+        if (displayed.isPresent()) {
+            ti = displayed.get();
+        } else {
+            // displayed なしなら all ingredients から最初の有効なものを探す
+            ti = view.getAllIngredients()
+                .filter(ITypedIngredient.class::isInstance)
+                .map(o -> (ITypedIngredient<?>) o)
+                .findFirst().orElse(null);
+        }
+        if (ti == null) return IngredientSpec.EMPTY;
+        Object obj = ti.getIngredient();
+        if (obj instanceof ItemStack stack && !stack.isEmpty()) {
+            return new IngredientSpec.Item(stack.copy());
+        }
+        if (obj instanceof FluidStack fs && !fs.isEmpty()) {
+            return new IngredientSpec.Fluid(fs.copy());
+        }
+        // Mek Gas: reflection で id + amount 抽出
+        if (ModList.get().isLoaded("mekanism")
+            && "mekanism.api.chemical.gas.GasStack".equals(ti.getType().getUid())) {
+            try {
+                var gasField = obj.getClass().getMethod("getType");
+                Object gasType = gasField.invoke(obj);
+                var idMethod = gasType.getClass().getMethod("getRegistryName");
+                ResourceLocation id = (ResourceLocation) idMethod.invoke(gasType);
+                var amtMethod = obj.getClass().getMethod("getAmount");
+                long amount = (long) amtMethod.invoke(obj);
+                if (id != null && amount > 0) {
+                    return new IngredientSpec.Gas(id, (int) Math.min(amount, Integer.MAX_VALUE));
+                }
+            } catch (Exception ignored) {}
+        }
+        return IngredientSpec.EMPTY;
     }
 
     @Override
@@ -235,7 +326,7 @@ public final class GenericDraft implements RecipeDraft {
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
         if (isGt) {
             return DIV.credit.client.draft.gt.GTSupport.tryBuildEmptyRecipe(
-                jeiType.getUid(), durationValue, eutValue, intDataValues);
+                jeiType.getUid(), durationValue, eutValue, intDataValues, cleanroomType);
         }
         return null;
     }
@@ -380,8 +471,12 @@ public final class GenericDraft implements RecipeDraft {
         for (String nc : notConsumable)   sb.append("        .notConsumable(").append(nc).append(")\n");
         for (String c  : chancedItemOut)  sb.append("        .chancedOutput(").append(c).append(")\n");
         for (String c  : chancedFlOut)    sb.append("        .chancedFluidOutput(").append(c).append(")\n");
-        sb.append("        .duration(").append(durationValue).append(")\n");
-        sb.append("        .EUt(").append(eutValue).append(")");
+        sb.append("        .duration(").append(durationValue).append(")");
+        // .EUt(0) は非電気機械 (primitive_blast_furnace 等) で KubeJS エラーになるため skip。
+        // 電気機械なら EUt は最低 1 (ULV) なので、0 = 「非電気」と判定して安全。
+        if (eutValue > 0) {
+            sb.append("\n        .EUt(").append(eutValue).append(")");
+        }
         // 既知の data パラメータを named method として追加
         if (intDataValues.containsKey("ebf_temp")) {
             sb.append("\n        .blastFurnaceTemp(").append(intDataValues.get("ebf_temp")).append(")");
@@ -390,6 +485,14 @@ public final class GenericDraft implements RecipeDraft {
         for (var e : intDataValues.entrySet()) {
             if ("ebf_temp".equals(e.getKey())) continue;
             sb.append("\n        .addData('").append(e.getKey()).append("', ").append(e.getValue()).append(")");
+        }
+        // v2.0.8: cleanroom requirement
+        // KubeJS は CleanroomType を文字列で受けない (string overload 無し) → 定数参照を使う:
+        //   .cleanroom(CleanroomType.CLEANROOM) / .cleanroom(CleanroomType.STERILE_CLEANROOM)
+        // 規約: 登録名 (snake_case) を UPPER_SNAKE_CASE に変換すれば static field 名と一致する想定。
+        if (cleanroomType != null && !cleanroomType.isEmpty()) {
+            String upper = cleanroomType.toUpperCase(java.util.Locale.ROOT);
+            sb.append("\n        .cleanroom(CleanroomType.").append(upper).append(")");
         }
         sb.append(";\n");
         return sb.toString();

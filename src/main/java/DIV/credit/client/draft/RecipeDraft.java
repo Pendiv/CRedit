@@ -1,5 +1,6 @@
 package DIV.credit.client.draft;
 
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -32,11 +33,24 @@ public interface RecipeDraft {
 
     RecipeType<?> recipeType();
 
-    /** kubejs/server_scripts/ 以下の相対パス。例 "generated/crafting_shaped.js"。 */
+    /**
+     * @deprecated v2.0.0: ScriptWriter は modid + operation で path を集中管理するようになり、
+     * このメソッドは呼ばれなくなった。各 Draft の override は残してあるが安全に削除可能。
+     */
+    @Deprecated
     String relativeOutputPath();
 
     /** KubeJS 用 1 レシピ分のコード。 */
     @Nullable String emit(String recipeId);
+
+    /**
+     * 既存レシピの内容をこの draft にロード（編集モード用）。v2.0.0。
+     * 成功時 true、未対応 / 認識不能で false。default は false (= 各 Draft が override)。
+     * <p>layout.getRecipe() で Recipe<?> 取得 + slot views も使える。
+     */
+    default boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        return false;
+    }
 
     /** スロットの種別。出力 / 流体 / 気体スロット判定に使う。 */
     enum SlotKind { ITEM_INPUT, ITEM_OUTPUT, FLUID_INPUT, FLUID_OUTPUT, GAS_INPUT, GAS_OUTPUT }
@@ -112,6 +126,16 @@ public interface RecipeDraft {
 
     /** keepHeldItem 設定。canKeepHeldItem() = false な draft では no-op。 */
     default void setKeepHeldItem(boolean value) {}
+
+    // ─── v2.0.0 DE: tier toggle (DRACONIUM/WYVERN/DRACONIC/CHAOTIC) ───
+    /** tier toggle UI を表示する適格性。FusionCraftingDraft のみ true。 */
+    default boolean canCycleTier() { return false; }
+    /** 現在の tier 表示名（例 "Wyvern"）。canCycleTier=false なら null。 */
+    default @Nullable String getTierLabel() { return null; }
+    /** 現在の tier カラー (ARGB)。canCycleTier=false なら 0xFFFFFFFF。 */
+    default int getTierColor() { return 0xFFFFFFFF; }
+    /** tier を 1 段切替。forward=true で次、false で前。canCycleTier=false なら no-op。 */
+    default void cycleTier(boolean forward) {}
 
     record NumericField(
         String label,

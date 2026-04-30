@@ -23,6 +23,8 @@ public class Credit {
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, CreditConfig.SPEC, "credit-client.toml");
         // Forge runtime event bus: ワールド退出で undo 履歴クリア
         MinecraftForge.EVENT_BUS.register(WorldEvents.class);
+        // v2.2.0 即時適応 history session の自動 flush
+        MinecraftForge.EVENT_BUS.register(DIV.credit.client.history.ImmediateHistorySession.Hook.class);
     }
 
     /** Forge event subscriber: client が world を抜けた時 UndoHistory を空にする。 */

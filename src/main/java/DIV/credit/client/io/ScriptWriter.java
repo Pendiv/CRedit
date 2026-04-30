@@ -3,6 +3,7 @@ package DIV.credit.client.io;
 import DIV.credit.Credit;
 import DIV.credit.client.draft.RecipeDraft;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -12,15 +13,26 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * KubeJS .js ファイルへの追記/新規作成。
- * カテゴリごとに 1 ファイル、マーカー優先 → `});` 直前 → 連番ファイルの三段フォールバック。
+ * KubeJS .js ファイルへの書き込み（v2.0.0 構造）。
+ * <pre>
+ * dump_root/generated/&lt;modid&gt;/{add,edit,delete}.js
+ * </pre>
+ * 1 MOD あたり 3 ファイル（add / edit / delete）に分かれる。挿入は marker → `});` の二段フォールバック。
  */
 public final class ScriptWriter {
 
     public static final String MARKER = "// @credit:insert-marker";
     public static final String MARKER_FULL = MARKER + " (do not remove)";
-    /** デフォルトのフォールバック。実際は CreditConfig.DUMP_ROOT を見る。 */
-    public static final String SCRIPTS_ROOT = "kubejs/server_scripts/generated/";
+
+    /** 操作種別。ファイル名 + ヘッダ表示に使う。 */
+    public enum OperationKind {
+        ADD("add"),
+        EDIT("edit"),
+        DELETE("delete");
+
+        public final String fileName;
+        OperationKind(String n) { this.fileName = n; }
+    }
 
     private ScriptWriter() {}
 
@@ -39,37 +51,95 @@ public final class ScriptWriter {
         }
     }
 
-    public static DumpResult dump(RecipeDraft draft, String recipeId) {
+    // ─── code body 生成 (writing なし) ───
+    // staging-aware path で使う。staging 経由なら build...() で code 取って StagingArea.stage に投げる。
+
+    /** ADD: 新規レシピのコード body だけ生成。null/blank なら不正 draft。 */
+    @Nullable
+    public static String buildAddCode(RecipeDraft draft, String recipeId) {
         String code = draft.emit(recipeId);
-        if (code == null || code.isBlank()) {
-            return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
-        }
+        if (code == null || code.isBlank()) return null;
+        return code;
+    }
+
+    /** EDIT: remove + 新 add のコード body 生成。 */
+    @Nullable
+    public static String buildEditCode(RecipeDraft draft, String origRecipeId, String newRecipeId) {
+        String addCode = draft.emit(newRecipeId);
+        if (addCode == null || addCode.isBlank()) return null;
+        return "    // EDIT of original: " + origRecipeId + "\n"
+             + "    event.remove({ id: '" + origRecipeId + "' })\n"
+             + addCode;
+    }
+
+    /** DELETE: event.remove のコード 1 行生成。 */
+    public static String buildDeleteCode(String recipeId) {
+        return "    event.remove({ id: '" + recipeId + "' })\n";
+    }
+
+    /** EDIT 用 modid 抽出 (orig ID 優先、fallback で draft の category namespace)。 */
+    public static String editModid(RecipeDraft draft, String origRecipeId) {
+        ResourceLocation orig = parseSafe(origRecipeId);
+        return orig != null ? orig.getNamespace() : draft.recipeType().getUid().getNamespace();
+    }
+
+    // ─── 旧 dump API: staging を経由しない直接書き込み (互換 + 緊急 escape hatch) ───
+
+    public static DumpResult dumpAdd(RecipeDraft draft, String recipeId) {
+        String code = buildAddCode(draft, recipeId);
+        if (code == null) return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
+        return writeOp(OperationKind.ADD, draft.recipeType().getUid().getNamespace(), code);
+    }
+
+    public static DumpResult dumpEdit(RecipeDraft draft, String origRecipeId, String newRecipeId) {
+        String code = buildEditCode(draft, origRecipeId, newRecipeId);
+        if (code == null) return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
+        return writeOp(OperationKind.EDIT, editModid(draft, origRecipeId), code);
+    }
+
+    public static DumpResult dumpDelete(String recipeId) {
+        ResourceLocation rl = parseSafe(recipeId);
+        if (rl == null) return new DumpResult.Failure("Invalid recipe id: " + recipeId);
+        return writeOp(OperationKind.DELETE, rl.getNamespace(), buildDeleteCode(recipeId));
+    }
+
+    /** push 経路から呼ばれる: staged code body を直接書き込み。 */
+    public static DumpResult writeStagedCode(OperationKind op, String modid, String code) {
+        return writeOp(op, modid, code);
+    }
+
+    @Nullable
+    private static ResourceLocation parseSafe(String s) {
+        try { return new ResourceLocation(s); } catch (Exception e) { return null; }
+    }
+
+    private static DumpResult writeOp(OperationKind op, String modid, String code) {
         String root = DIV.credit.CreditConfig.DUMP_ROOT.get();
         if (root == null || root.isBlank()) root = "kubejs/server_scripts";
-        // remove trailing slash
         if (root.endsWith("/") || root.endsWith("\\")) root = root.substring(0, root.length() - 1);
         Path target = Minecraft.getInstance().gameDirectory.toPath()
-            .resolve(root + "/" + draft.relativeOutputPath());
+            .resolve(root + "/generated/" + modid + "/" + op.fileName + ".js");
         try {
             Files.createDirectories(target.getParent());
             if (!Files.exists(target)) {
-                writeNewFile(target, draft, code);
+                writeNewFile(target, op, modid, code);
                 return new DumpResult.Success(target);
             }
-            return appendIntoExisting(target, draft, code);
+            return appendIntoExisting(target, op, modid, code);
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] dump IO error", e);
+            Credit.LOGGER.error("[CraftPattern] {} write IO error", op, e);
             return new DumpResult.Failure("IO error: " + e.getMessage());
         }
     }
 
-    private static void writeNewFile(Path target, RecipeDraft draft, String code) throws IOException {
+    private static void writeNewFile(Path target, OperationKind op, String modid, String code) throws IOException {
         String now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
         String header =
             "// =====================================================\n" +
             "// Generated by /craftpattern (credit MOD)\n" +
             "// FORMAT: KubeJS (https://kubejs.com/)\n" +
-            "// Category: " + draft.recipeType().getUid() + "\n" +
+            "// Operation: " + op.name() + "\n" +
+            "// MOD: " + modid + "\n" +
             "// First created: " + now + "\n" +
             "// Place this file under kubejs/server_scripts/ to take effect.\n" +
             "// Run /reload (or /kubejs reload server_scripts) to apply.\n" +
@@ -81,7 +151,7 @@ public final class ScriptWriter {
         Files.writeString(target, header + code + footer);
     }
 
-    private static DumpResult appendIntoExisting(Path target, RecipeDraft draft, String code) throws IOException {
+    private static DumpResult appendIntoExisting(Path target, OperationKind op, String modid, String code) throws IOException {
         String content = Files.readString(target);
 
         Integer insertAt = findMarkerInsertionPoint(content);
@@ -98,9 +168,8 @@ public final class ScriptWriter {
                 : new DumpResult.Fallback(target, reason);
         }
 
-        // Final fallback: create a numbered new file
         Path numbered = nextNumberedFile(target);
-        writeNewFile(numbered, draft, code);
+        writeNewFile(numbered, op, modid, code);
         return new DumpResult.Fallback(numbered, "no marker and no `});` found");
     }
 

@@ -70,21 +70,27 @@ public final class GTSupport {
      */
     @Nullable
     public static GTRecipe tryBuildEmptyRecipe(ResourceLocation jeiUid) {
-        return tryBuildEmptyRecipe(jeiUid, 0, 0, Map.of());
+        return tryBuildEmptyRecipe(jeiUid, 0, 0, Map.of(), null);
+    }
+
+    /** 後方互換: cleanroom 引数なし版。 */
+    @Nullable
+    public static GTRecipe tryBuildEmptyRecipe(ResourceLocation jeiUid, long duration, long eut,
+                                                 Map<String, Long> intData) {
+        return tryBuildEmptyRecipe(jeiUid, duration, eut, intData, null);
     }
 
     /**
      * GenericDraft が numeric fields を介してユーザー編集を反映する版。
-     * duration / EUt / 任意の int data (ebf_temp 等) を builder に適用する。
+     * duration / EUt / 任意の int data (ebf_temp 等) + cleanroom condition を builder に適用する。
+     * <p>cleanroomName != null の時は CleanroomCondition を追加 → GT が JEI で
+     * 「クリーンルーム: <表示名>」を自動描画する (LabelWidget)。
      */
     @Nullable
     public static GTRecipe tryBuildEmptyRecipe(ResourceLocation jeiUid, long duration, long eut,
-                                                 Map<String, Long> intData) {
+                                                 Map<String, Long> intData, @Nullable String cleanroomName) {
         try {
-            // First try as direct GTRecipeType
             GTRecipeType type = GTRegistries.RECIPE_TYPES.get(jeiUid);
-            // Fallback: GT サブカテゴリ（chem_dyes, ingot_molding, *_recycling 等）の場合
-            // GTRecipeCategory の親 GTRecipeType を引く
             if (type == null) {
                 var cat = GTRegistries.RECIPE_CATEGORIES.get(jeiUid);
                 if (cat != null) type = cat.getRecipeType();
@@ -96,6 +102,16 @@ public final class GTSupport {
             if (eut > 0) b.EUt(eut);
             for (Map.Entry<String, Long> e : intData.entrySet()) {
                 if (e.getValue() != null && e.getValue() > 0) b.addData(e.getKey(), e.getValue().intValue());
+            }
+            // v2.0.8: cleanroom condition 追加
+            if (cleanroomName != null && !cleanroomName.isEmpty()) {
+                try {
+                    var ctType = com.gregtechceu.gtceu.api.machine.multiblock.CleanroomType
+                        .getByNameOrDefault(cleanroomName);
+                    b.cleanroom(ctType);
+                } catch (Throwable e) {
+                    Credit.LOGGER.warn("[CraftPattern] cleanroom inject failed for {}: {}", cleanroomName, e.toString());
+                }
             }
             return b.buildRawRecipe();
         } catch (Exception e) {
@@ -115,6 +131,51 @@ public final class GTSupport {
         "circuit_assembler",      java.util.Map.of("solder_multiplier", 1L),
         "fusion_reactor",         java.util.Map.of("eu_to_start", 0L)
     );
+
+    /** sampleRecipe から CleanroomCondition を探して cleanroom 名を返す (なければ null)。reflection-safe。 */
+    public static String probeCleanroom(Object sampleRecipe) {
+        if (!(sampleRecipe instanceof GTRecipe r)) return null;
+        if (r.conditions == null || r.conditions.isEmpty()) return null;
+        for (var cond : r.conditions) {
+            if (cond == null) continue;
+            String cls = cond.getClass().getSimpleName();
+            if ("CleanroomCondition".equals(cls)) {
+                try {
+                    // CleanroomCondition.getCleanroom() は @Getter で生成された method
+                    var getCleanroom = cond.getClass().getMethod("getCleanroom");
+                    Object ct = getCleanroom.invoke(cond);
+                    if (ct == null) return null;
+                    var getName = ct.getClass().getMethod("getName");
+                    Object name = getName.invoke(ct);
+                    return name != null ? name.toString() : null;
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** CleanroomType.getAllTypes() を reflection で呼ぶ。GT 不在環境では empty。 */
+    public static java.util.List<String> getAllCleanroomNames() {
+        try {
+            Class<?> cls = Class.forName("com.gregtechceu.gtceu.api.machine.multiblock.CleanroomType");
+            var getAllTypes = cls.getMethod("getAllTypes");
+            Object set = getAllTypes.invoke(null);
+            java.util.List<String> result = new java.util.ArrayList<>();
+            if (set instanceof java.util.Set<?> typed) {
+                for (Object ct : typed) {
+                    var getName = ct.getClass().getMethod("getName");
+                    Object name = getName.invoke(ct);
+                    if (name != null) result.add(name.toString());
+                }
+            }
+            java.util.Collections.sort(result);
+            return result;
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
+    }
 
     public static GtMetadata probeMetadata(Object sampleRecipe, ResourceLocation jeiUid) {
         long dur = 100;

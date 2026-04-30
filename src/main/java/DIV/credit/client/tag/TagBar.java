@@ -82,6 +82,20 @@ public class TagBar {
     private static final java.util.regex.Pattern CHANCE_FILTER =
         java.util.regex.Pattern.compile("[0-9,]*");
 
+    // ─── v2.0.8 cleanroom mode ───
+    /** GT カテゴリ時に namespace slot Shift+click で ON。category 切替で OFF。 */
+    private boolean cleanroomMode = false;
+    /** 選択された cleanroom 名 (null = none / 未選択)。 */
+    @org.jetbrains.annotations.Nullable
+    private String selectedCleanroom = null;
+    private boolean cleanroomDropdownOpen = false;
+    /** 表示用キャッシュ。category 切替や mode 切替時に refresh。 */
+    private java.util.List<String> cleanroomChoices = java.util.List.of();
+    /** marker アイテムの NBT tag key — drag-drop で検出する。 */
+    public static final String CLEANROOM_MARKER_TAG = "credit_cleanroom_marker";
+    /** "none" を内部表現する placeholder string。NBT の値として保存する。 */
+    public static final String CLEANROOM_NONE = "__none__";
+
     public void init(Screen screen, Font font, int x, int y, int width, Consumer<EditBox> register) {
         this.x = x;
         this.y = y;
@@ -137,7 +151,68 @@ public class TagBar {
     }
 
     public ItemStack getNsIcon() {
+        if (cleanroomMode) {
+            // GT plascrete を使う。GT 不在時は IRON_BLOCK fallback。
+            Item ply = BuiltInRegistries.ITEM.get(new ResourceLocation("gtceu", "plascrete"));
+            if (ply != null && ply != Items.AIR) return new ItemStack(ply);
+            return new ItemStack(Items.IRON_BLOCK);
+        }
         return new ItemStack(currentNamespace.equals(NS_FORGE) ? Items.ANVIL : Items.GRASS_BLOCK);
+    }
+
+    // ─── v2.0.8 cleanroom mode API ───
+    public boolean isCleanroomMode() { return cleanroomMode; }
+
+    /** GT カテゴリ時のみ呼ばれる想定。toggle = ON ↔ OFF。 */
+    public void toggleCleanroomMode() {
+        if (!isGtCategory()) {
+            cleanroomMode = false;  // 非 GT では強制 OFF
+            return;
+        }
+        cleanroomMode = !cleanroomMode;
+        cleanroomDropdownOpen = cleanroomMode;
+        if (cleanroomMode) {
+            cleanroomChoices = DIV.credit.client.draft.gt.GTSupport.getAllCleanroomNames();
+            // none 選択肢を追加
+            java.util.List<String> withNone = new java.util.ArrayList<>(cleanroomChoices.size() + 1);
+            withNone.add(CLEANROOM_NONE);
+            withNone.addAll(cleanroomChoices);
+            cleanroomChoices = withNone;
+        } else {
+            cleanroomDropdownOpen = false;
+            selectedCleanroom = null;
+            resultStack = ItemStack.EMPTY;
+        }
+    }
+
+    private boolean isGtCategory() {
+        return categoryNamespace != null
+            && ("gtceu".equals(categoryNamespace) || "gtcsolo".equals(categoryNamespace));
+    }
+
+    /** 選択した cleanroom 名で marker stack を生成。none なら none marker。 */
+    private ItemStack buildCleanroomMarker(String name) {
+        Item plascrete = BuiltInRegistries.ITEM.get(new ResourceLocation("gtceu", "plascrete"));
+        Item base = (plascrete != null && plascrete != Items.AIR) ? plascrete : Items.IRON_BLOCK;
+        ItemStack stack = new ItemStack(base);
+        stack.getOrCreateTag().putString(CLEANROOM_MARKER_TAG, name);
+        Component label = CLEANROOM_NONE.equals(name)
+            ? Component.translatable("gui.credit.tagbar.cleanroom.marker_none").withStyle(ChatFormatting.RED)
+            : Component.translatable("gui.credit.tagbar.cleanroom.marker", name).withStyle(ChatFormatting.AQUA);
+        stack.setHoverName(label);
+        return stack;
+    }
+
+    /** ItemStack が cleanroom marker か判定。null safe. */
+    public static boolean isCleanroomMarker(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.hasTag()) return false;
+        return stack.getTag().contains(CLEANROOM_MARKER_TAG);
+    }
+
+    /** Marker から cleanroom 名取得。none なら CLEANROOM_NONE 文字列。 */
+    public static String readCleanroomMarker(ItemStack stack) {
+        if (!isCleanroomMarker(stack)) return null;
+        return stack.getTag().getString(CLEANROOM_MARKER_TAG);
     }
 
     public boolean isOverNsSlot(double mx, double my) {
@@ -303,6 +378,22 @@ public class TagBar {
                 applyBoxMode();
             }
         }
+        // v2.0.8: 非 GT カテゴリに切替 → cleanroom mode 自動 OFF (アイコン金床/草に戻る)
+        if (cleanroomMode && !isGtCategory()) {
+            cleanroomMode = false;
+            cleanroomDropdownOpen = false;
+            selectedCleanroom = null;
+            if (isCleanroomMarker(resultStack)) resultStack = ItemStack.EMPTY;
+        }
+    }
+
+    /** cleanroom header クリック → dropdown 開閉。BuilderScreen から呼ぶ。 */
+    public boolean handleCleanroomHeaderClick(double mx, double my, int button) {
+        if (!cleanroomMode) return false;
+        if (button != 0) return false;
+        if (mx < boxX || mx >= boxX + boxW || my < boxY - 1 || my >= boxY + 12) return false;
+        cleanroomDropdownOpen = !cleanroomDropdownOpen;
+        return true;
     }
 
     public void render(GuiGraphics g, int mouseX, int mouseY) {
@@ -315,13 +406,14 @@ public class TagBar {
         renderCfgContent(g);
         // Box 描画モード分岐
         reopenBtnX = -1;
-        if (cfgContent.isEmpty()) {
+        if (cleanroomMode) {
+            // Cleanroom mode: dropdown-header 風表示 (box 領域に「Cleanroom: <selected>」)
+            renderCleanroomHeader(g, mouseX, mouseY);
+        } else if (cfgContent.isEmpty()) {
             // TAG mode: 普通の EditBox（追加描画なし）
         } else if (boxMode == BoxMode.CHANCE) {
-            // CHANCE mode: EditBox visible + 右端に ▾ 再オープン btn
             renderReopenButton(g, mouseX, mouseY);
         } else {
-            // HIDDEN mode: EditBox 隠れ + dropdown header
             renderDropdownHeader(g, mouseX, mouseY);
         }
         // Result slot — finderSource があればそれを優先描画
@@ -331,6 +423,30 @@ public class TagBar {
         } else if (!resultStack.isEmpty()) {
             g.renderItem(resultStack, resultSlotX, resultSlotY);
         }
+    }
+
+    /** cleanroom mode: dropdown header を box 領域に。 */
+    private void renderCleanroomHeader(GuiGraphics g, int mouseX, int mouseY) {
+        Font font = Minecraft.getInstance().font;
+        boolean hover = mouseX >= boxX && mouseX < boxX + boxW
+                     && mouseY >= boxY - 1 && mouseY < boxY + 12;
+        g.fill(boxX - 1, boxY - 1, boxX + boxW + 1, boxY + 12, 0xFF8B8B8B);
+        g.fill(boxX,     boxY,     boxX + boxW,     boxY + 11, 0xFF002030);
+        if (hover) g.fill(boxX, boxY, boxX + boxW, boxY + 11, 0x33FFFFFF);
+        Component label;
+        if (selectedCleanroom == null) {
+            label = Component.translatable("gui.credit.tagbar.cleanroom.choose").withStyle(ChatFormatting.YELLOW);
+        } else if (CLEANROOM_NONE.equals(selectedCleanroom)) {
+            label = Component.translatable("gui.credit.tagbar.cleanroom.selected_none")
+                .withStyle(ChatFormatting.RED);
+        } else {
+            label = Component.translatable("gui.credit.tagbar.cleanroom.selected", selectedCleanroom)
+                .withStyle(ChatFormatting.AQUA);
+        }
+        g.drawString(font, label, boxX + 3, boxY + 2, 0xFFFFFFFF, false);
+        String arrow = cleanroomDropdownOpen ? "▴" : "▾";
+        int aw = font.width(arrow);
+        g.drawString(font, arrow, boxX + boxW - aw - 3, boxY + 2, 0xFFAAAAAA, false);
     }
 
     private void renderFinderSource(GuiGraphics g) {
@@ -354,6 +470,54 @@ public class TagBar {
         if (!visible) return;
         renderFinderDropdown(g, mouseX, mouseY);
         renderCfgDropdown(g, mouseX, mouseY);
+        renderCleanroomDropdown(g, mouseX, mouseY);
+    }
+
+    /** cleanroom dropdown 本体。none + getAllCleanroomNames(). */
+    private int crListX = -1, crListY = -1, crListW = 0, crListH = 0;
+    private void renderCleanroomDropdown(GuiGraphics g, int mouseX, int mouseY) {
+        crListX = -1;
+        if (!cleanroomMode || !cleanroomDropdownOpen || cleanroomChoices.isEmpty()) return;
+        Font font = Minecraft.getInstance().font;
+        int rowH = OPT_ROW_H;
+        int listH = cleanroomChoices.size() * rowH;
+        int listY = boxY + 12 + 1;
+        crListX = boxX;
+        crListY = listY;
+        crListW = boxW;
+        crListH = listH;
+        g.fill(boxX - 1, listY - 1, boxX + boxW + 1, listY + listH + 1, 0xFF8B8B8B);
+        g.fill(boxX,     listY,     boxX + boxW,     listY + listH,     0xFF002030);
+        for (int i = 0; i < cleanroomChoices.size(); i++) {
+            int rowY = listY + i * rowH;
+            String name = cleanroomChoices.get(i);
+            boolean hover = mouseX >= boxX && mouseX < boxX + boxW
+                         && mouseY >= rowY && mouseY < rowY + rowH;
+            boolean selected = name.equals(selectedCleanroom);
+            if (hover)    g.fill(boxX, rowY, boxX + boxW, rowY + rowH, 0x55FFFFFF);
+            if (selected) g.fill(boxX, rowY, boxX + boxW, rowY + rowH, 0x3366CCFF);
+            String label = CLEANROOM_NONE.equals(name) ? "(none)" : name;
+            int color = CLEANROOM_NONE.equals(name) ? 0xFFFF8888
+                      : (hover ? 0xFFFFFF55 : 0xFFE0E0E0);
+            g.drawString(font, label, boxX + 3, rowY + 2, color, false);
+        }
+    }
+
+    /** dropdown row click 検知 + 選択処理。BuilderScreen から委譲。 */
+    public boolean handleCleanroomDropdownClick(double mx, double my, int button) {
+        if (!cleanroomMode || !cleanroomDropdownOpen) return false;
+        if (button != 0) return false;
+        if (crListX < 0) return false;
+        if (mx < crListX || mx >= crListX + crListW
+         || my < crListY || my >= crListY + crListH) return false;
+        int idx = (int) ((my - crListY) / OPT_ROW_H);
+        if (idx < 0 || idx >= cleanroomChoices.size()) return false;
+        String picked = cleanroomChoices.get(idx);
+        selectedCleanroom = picked;
+        cleanroomDropdownOpen = false;
+        // result slot に marker を配置
+        resultStack = buildCleanroomMarker(picked);
+        return true;
     }
 
     /** Result slot の finder dropdown（タグ一覧）。 */
@@ -506,9 +670,25 @@ public class TagBar {
     public void renderTooltip(GuiGraphics g, Font font, int mouseX, int mouseY) {
         if (!visible) return;
         if (isOverNsSlot(mouseX, mouseY)) {
-            g.renderTooltip(font, Component.literal("Default namespace: ")
-                .append(Component.literal(currentNamespace).withStyle(ChatFormatting.AQUA)),
-                mouseX, mouseY);
+            if (cleanroomMode) {
+                g.renderComponentTooltip(font, java.util.List.of(
+                    Component.translatable("gui.credit.tagbar.cleanroom.mode_on")
+                        .withStyle(ChatFormatting.AQUA),
+                    Component.translatable("gui.credit.tagbar.cleanroom.shift_off")
+                        .withStyle(ChatFormatting.DARK_GRAY)
+                ), mouseX, mouseY);
+            } else if (isGtCategory()) {
+                g.renderComponentTooltip(font, java.util.List.of(
+                    Component.literal("Default namespace: ")
+                        .append(Component.literal(currentNamespace).withStyle(ChatFormatting.AQUA)),
+                    Component.translatable("gui.credit.tagbar.cleanroom.shift_on")
+                        .withStyle(ChatFormatting.DARK_GRAY)
+                ), mouseX, mouseY);
+            } else {
+                g.renderTooltip(font, Component.literal("Default namespace: ")
+                    .append(Component.literal(currentNamespace).withStyle(ChatFormatting.AQUA)),
+                    mouseX, mouseY);
+            }
         } else if (isOverCfgSlot(mouseX, mouseY)) {
             renderCfgSlotTooltip(g, font, mouseX, mouseY);
         } else if (isOverResultSlot(mouseX, mouseY)) {
