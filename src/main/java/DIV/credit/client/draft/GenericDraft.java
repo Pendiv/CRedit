@@ -49,6 +49,14 @@ public final class GenericDraft implements RecipeDraft {
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
     /** v2.0.8 GT cleanroom requirement (e.g. "cleanroom" / "sterile_cleanroom" / null = none). */
     @Nullable private String cleanroomType = null;
+    /** v2.0.10: 当該 GT recipe type が電気を使うか (multi-sample probe 結果)。非電気なら EUt 編集不可。 */
+    private boolean gtIsElectric = false;
+    /**
+     * v2.0.12: per-slot 最大 count。multi-sample probe で全サンプルが count=1 なら 1 (lock)、
+     * いずれかで count>1 が観測されたら Integer.MAX_VALUE (無制限)。
+     * 例: vanilla crafting output は count > 1 観測 → 無制限、入力は通常 1 → lock。
+     */
+    private int[] slotMaxCounts = null;  // null = 無制限 (probe 失敗時 fallback)
 
     private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
                          boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
@@ -139,19 +147,76 @@ public final class GenericDraft implements RecipeDraft {
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
             String cleanroomInit = null;
+            boolean isElectric = false;
             if (isGt) {
                 var meta = DIV.credit.client.draft.gt.GTSupport.probeMetadata(sample.get(), rt.getUid());
                 durationInit = meta.duration;
                 eutInit = meta.eut;
                 intDataInit.putAll(meta.intData);
                 cleanroomInit = DIV.credit.client.draft.gt.GTSupport.probeCleanroom(sample.get());
-                Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={} cleanroom={}",
-                    rt.getUid(), durationInit, eutInit, intDataInit, cleanroomInit);
+                // v2.0.10: multi-sample probe で電気種別判定 (型特性として max EUt > 0 か)
+                if (eutInit > 0) {
+                    isElectric = true;
+                } else {
+                    var moreSamples = rm.createRecipeLookup(rt).includeHidden().get().limit(20).toList();
+                    for (T s : moreSamples) {
+                        var m = DIV.credit.client.draft.gt.GTSupport.probeMetadata(s, rt.getUid());
+                        if (m.eut > 0) { isElectric = true; break; }
+                    }
+                }
+                Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={} cleanroom={} electric={}",
+                    rt.getUid(), durationInit, eutInit, intDataInit, cleanroomInit, isElectric);
             }
             Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={}",
                 rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate);
+            // v2.0.12: per-slot max count probe (multi-sample)
+            int[] slotMaxCounts = new int[slotCount];
+            // default: 1 (lock)。いずれかのサンプルで count>1 観測したら MAX_VALUE。
+            for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = 1;
+            // 既に sample.get() の views を見てるので、それに加えて追加 sample で確認
+            try {
+                java.util.List<T> probeSamples = rm.createRecipeLookup(rt).includeHidden().get()
+                    .limit(20).toList();
+                for (T s : probeSamples) {
+                    if (java.util.Arrays.stream(slotMaxCounts).allMatch(v -> v > 1)) break;
+                    var d2 = rm.createRecipeLayoutDrawable(cat, s, empty).orElse(null);
+                    if (d2 == null) continue;
+                    var sViews = d2.getRecipeSlotsView().getSlotViews();
+                    for (int i = 0; i < Math.min(sViews.size(), slotCount); i++) {
+                        if (slotMaxCounts[i] > 1) continue;  // 既に観測済
+                        // ITypedIngredient<ItemStack> のみ count check (fluid/gas は別概念で無制限)
+                        boolean hasMulti = sViews.get(i).getAllIngredients()
+                            .map(o -> (mezz.jei.api.ingredients.ITypedIngredient<?>) o)
+                            .anyMatch(ti -> {
+                                Object obj = ti.getIngredient();
+                                if (obj instanceof net.minecraft.world.item.ItemStack stack) {
+                                    return stack.getCount() > 1;
+                                }
+                                return false;
+                            });
+                        if (hasMulti) slotMaxCounts[i] = Integer.MAX_VALUE;
+                    }
+                }
+                // fluid/gas slot は常に無制限
+                for (int i = 0; i < slotCount; i++) {
+                    SlotKind k = kinds[i];
+                    if (k != SlotKind.ITEM_INPUT && k != SlotKind.ITEM_OUTPUT) {
+                        slotMaxCounts[i] = Integer.MAX_VALUE;
+                    }
+                }
+            } catch (Exception e) {
+                Credit.LOGGER.warn("[CraftPattern] slot count probe failed for {}: {}", rt.getUid(), e.toString());
+                for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = Integer.MAX_VALUE;  // 安全側
+            }
+            int locked = 0;
+            for (int v : slotMaxCounts) if (v == 1) locked++;
+            Credit.LOGGER.info("[CraftPattern] slot count probe for {}: {}/{} slots locked to count=1",
+                rt.getUid(), locked, slotCount);
+
             GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
             d.cleanroomType = cleanroomInit;
+            d.gtIsElectric = isElectric;
+            d.slotMaxCounts = slotMaxCounts;
             return d;
         } catch (Exception e) {
             Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
@@ -192,7 +257,8 @@ public final class GenericDraft implements RecipeDraft {
     @Override public int slotCount() { return slots.length; }
     @Override public IngredientSpec getSlot(int i) { return slots[i]; }
     @Override public RecipeType<?> recipeType() { return jeiType; }
-    @Override public boolean usesGtElectricity() { return isGt && eutValue > 0; }
+    /** v2.0.10: 電気種別の判定。eutValue ではなく gtIsElectric (recipe type 由来) を見る。 */
+    @Override public boolean usesGtElectricity() { return isGt && gtIsElectric; }
 
     @Override
     public boolean canRequireHeat() {
@@ -228,6 +294,14 @@ public final class GenericDraft implements RecipeDraft {
     public SlotKind slotKind(int i) {
         if (i < 0 || i >= kinds.length) return SlotKind.ITEM_INPUT;
         return kinds[i];
+    }
+
+    @Override
+    public int slotMaxCount(int slotIndex) {
+        if (slotMaxCounts == null || slotIndex < 0 || slotIndex >= slotMaxCounts.length) {
+            return Integer.MAX_VALUE;
+        }
+        return slotMaxCounts[slotIndex];
     }
 
     /**
@@ -337,8 +411,12 @@ public final class GenericDraft implements RecipeDraft {
         java.util.List<NumericField> fields = new java.util.ArrayList<>();
         fields.add(new NumericField("Duration", NumericField.Kind.INT,
             () -> durationValue, v -> durationValue = (long) v, 1, Integer.MAX_VALUE));
-        fields.add(new NumericField("EUt", NumericField.Kind.INT,
-            () -> eutValue, v -> eutValue = (long) v, 0, Integer.MAX_VALUE));
+        // v2.0.10: 非電気機械 (primitive_blast_furnace 等) は EUt を編集不可に。
+        // gtIsElectric は recipe type の multi-sample probe 由来 — 個別レシピの値ではなく型の特性。
+        if (gtIsElectric) {
+            fields.add(new NumericField("EUt", NumericField.Kind.INT,
+                () -> eutValue, v -> eutValue = (long) v, 0, Integer.MAX_VALUE));
+        }
         for (String key : intDataValues.keySet()) {
             fields.add(new NumericField(prettyDataLabel(key), NumericField.Kind.INT,
                 () -> intDataValues.getOrDefault(key, 0L),

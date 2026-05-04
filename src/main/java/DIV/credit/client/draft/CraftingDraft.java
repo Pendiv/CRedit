@@ -49,6 +49,17 @@ public class CraftingDraft implements RecipeDraft {
     @Override public IngredientSpec getOutput() { return slots[IDX_OUTPUT]; }
     @Override public RecipeType<?> recipeType() { return RecipeTypes.CRAFTING; }
 
+    /**
+     * v2.0.12: vanilla crafting input は各 grid cell が 1 item only。
+     * shaped pattern も shapeless も count > 1 は意味なし (JSON で表現されない)。
+     * output は count > 1 valid (sticks 4 個等)。
+     */
+    @Override
+    public int slotMaxCount(int slotIndex) {
+        if (slotIndex == IDX_OUTPUT) return Integer.MAX_VALUE;
+        return 1;  // input grid (1..9) は 1 lock
+    }
+
     @Override
     public void setSlot(int i, IngredientSpec s) {
         if (i < 0 || i >= SLOT_COUNT) return;

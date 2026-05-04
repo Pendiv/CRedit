@@ -183,11 +183,31 @@ public class StackBuilderWidget {
                 g.renderItemDecorations(Minecraft.getInstance().font, it.stack(), slotX, slotY);
                 return;
             }
+            long ticks = Minecraft.getInstance().level != null
+                ? Minecraft.getInstance().level.getGameTime()
+                : 0;
+            if (content instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+                ItemStack cycled = DIV.credit.client.tag.TagItemHelper
+                    .cycledItemFromTag(tg.tagId(), ticks);
+                if (cycled != null && !cycled.isEmpty()) {
+                    g.renderItem(cycled, slotX, slotY);
+                }
+                return;
+            }
             IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
             if (rt == null) return;
             if (content instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
                 rt.getIngredientManager().getIngredientRenderer(ForgeTypes.FLUID_STACK)
                     .render(g, fl.stack(), slotX, slotY);
+                return;
+            }
+            if (content instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
+                net.minecraftforge.fluids.FluidStack cycled = DIV.credit.client.tag.TagItemHelper
+                    .cycledFluidFromTag(ft.tagId(), ft.amount(), ticks);
+                if (cycled != null && !cycled.isEmpty()) {
+                    rt.getIngredientManager().getIngredientRenderer(ForgeTypes.FLUID_STACK)
+                        .render(g, cycled, slotX, slotY);
+                }
                 return;
             }
             if (content instanceof IngredientSpec.Gas gas && gas.gasId() != null) {
@@ -215,7 +235,9 @@ public class StackBuilderWidget {
 
     private static String describe(IngredientSpec s) {
         if (s instanceof IngredientSpec.Item it) return it.stack().getDisplayName().getString() + " (" + it.stack().getCount() + ")";
+        if (s instanceof IngredientSpec.Tag tg) return "#" + tg.tagId() + " ×" + tg.count();
         if (s instanceof IngredientSpec.Fluid fl) return fl.stack().getDisplayName().getString() + " (" + fl.stack().getAmount() + "mB)";
+        if (s instanceof IngredientSpec.FluidTag ft) return "#" + ft.tagId() + " (" + ft.amount() + "mB, fluid)";
         if (s instanceof IngredientSpec.Gas gas) return gas.gasId() + " (" + gas.amount() + "mB)";
         return s.toString();
     }

@@ -562,7 +562,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         renderUnsupportedNotice(g);
         renderJeiViewHint(g, mouseX, mouseY);
         renderEditModeBadge(g, mouseX, mouseY);
-        renderTierToggle(g, mouseX, mouseY);
+        // v2.0.13: tier toggle 旧 [Wyvern] 描画は削除 (DE 本体 JEI 表記に置換)
+        // renderTierToggle(g, mouseX, mouseY);
         renderNumberLabels(g);
         renderDumpButton(g, mouseX, mouseY);
         renderSettingsButton(g, mouseX, mouseY);
@@ -832,6 +833,19 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        if (button == 0) {
+            var resultRect = tagBar.getResultSlotRect();
+            DIV.credit.Credit.LOGGER.info(
+                "[CraftPattern] mouseClicked ENTRY: pos=({},{}) button={} ghost={} carried={} dragSpec={} finder={} overResult={} resultRect={}",
+                (int) mx, (int) my, button,
+                ghostCursor.isEmpty() ? "EMPTY" : ghostCursor.getItem().toString(),
+                menu.getCarried().isEmpty() ? "EMPTY" : menu.getCarried().getItem().toString(),
+                dragSpec.getClass().getSimpleName(),
+                tagBar.getFinderSource().isEmpty() ? "EMPTY" : "ACTIVE",
+                tagBar.isOverResultSlot(mx, my),
+                resultRect == null ? "null" : "(" + resultRect.getX() + "," + resultRect.getY()
+                    + "," + resultRect.getWidth() + "x" + resultRect.getHeight() + ")");
+        }
         if (tabBar != null && tabBar.mouseClicked(mx, my, button)) return true;
 
         // Shift+left-click on recipe area → open JEI for current category (sets OriginTracker)
@@ -849,15 +863,18 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             toggleCraftingMode();
             return true;
         }
-        // DE tier toggle: 左クリ→次、Shift+左クリ→前
-        if (button == 0 && tierX >= 0
-            && mx >= tierX && mx < tierX + tierW
-            && my >= tierY && my < tierY + tierH) {
-            RecipeDraft draft = recipeArea.getDraft();
-            if (draft != null && draft.canCycleTier()) {
-                draft.cycleTier(!Screen.hasShiftDown());
-                playClick();
-                return true;
+        // v2.0.13: DE tier cycle — recipe area の non-slot 領域クリックで cycle。
+        // 左クリ → 次、Shift+左クリ → 前。
+        // 旧 [Wyvern] toggle button は撤去、DE 本体 JEI 表記の上をクリックする想定。
+        if (button == 0 && recipeArea.isInside(mx, my)) {
+            RecipeDraft drCycle = recipeArea.getDraft();
+            if (drCycle != null && drCycle.canCycleTier()) {
+                if (recipeArea.findSlotIndexAt(mx, my) < 0) {  // slot 上ではない
+                    drCycle.cycleTier(!Screen.hasShiftDown());
+                    recipeArea.rebuild();
+                    playClick();
+                    return true;
+                }
             }
         }
         if (button == 0 && dumpX >= 0
@@ -946,10 +963,38 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             playClick();
             return true;
         }
-        // Tag bar result slot pickup → ghost cursor (finder 非アクティブ時のみ)
+        // Tag bar result slot: ghost cursor (credit 独自) または vanilla cursor を持って Result slot にクリック
+        // → finder source として set + cursor 消費。 finderSource の状態に関わらず処理 (上書き可)。
+        // この処理が無いと末尾の `ghostCursor = EMPTY` で消えてしまう or super で vanilla drop されてしまう。
+        if (button == 0 && tagBar.isOverResultSlot(mx, my)) {
+            ItemStack source = !ghostCursor.isEmpty() ? ghostCursor : menu.getCarried();
+            if (!source.isEmpty()) {
+                DIV.credit.client.draft.IngredientSpec spec =
+                    DIV.credit.client.recipe.RecipeArea.ingredientFromCursor(source);
+                if (!spec.isEmpty()) {
+                    tagBar.setFinderSource(spec);
+                }
+                // ghost cursor 経由なら消費。 vanilla cursor (menu.carried) は触らない。
+                if (!ghostCursor.isEmpty()) {
+                    ghostCursor = ItemStack.EMPTY;
+                }
+                return true;
+            }
+        }
+        // Tag bar result slot pickup → ghost cursor (finder 非アクティブ + vanilla cursor 空の時のみ)
         if (button == 0 && tagBar.isOverResultSlot(mx, my) && tagBar.getFinderSource().isEmpty()) {
             ItemStack r = tagBar.getResult();
-            this.ghostCursor = r.isEmpty() ? ItemStack.EMPTY : r.copy();
+            if (r.isEmpty()) {
+                this.ghostCursor = ItemStack.EMPTY;
+            } else {
+                this.ghostCursor = r.copy();
+                DIV.credit.client.draft.IngredientSpec tagSpec =
+                    DIV.credit.client.tag.TagItemHelper.specFromNameTag(r);
+                if (!tagSpec.isEmpty()) {
+                    this.dragSpec = tagSpec;
+                    this.dragFromCfg = false;
+                }
+            }
             return true;
         }
         // Tag bar CFG slot: Shift+右クリで明示クリア。プレーン右クリは何もしない（誤クリック防止）。
@@ -1039,6 +1084,22 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
+        // ghost cursor / vanilla cursor を Result slot 上で release した場合 → finder source 取り込み + 消費。
+        // dragSpec 空チェックは ghost drag (credit dragSpec 経由) と区別するため。
+        if (button == 0 && dragSpec.isEmpty() && tagBar.isOverResultSlot(mx, my)) {
+            ItemStack source = !ghostCursor.isEmpty() ? ghostCursor : menu.getCarried();
+            if (!source.isEmpty()) {
+                DIV.credit.client.draft.IngredientSpec spec =
+                    DIV.credit.client.recipe.RecipeArea.ingredientFromCursor(source);
+                if (!spec.isEmpty()) {
+                    tagBar.setFinderSource(spec);
+                }
+                if (!ghostCursor.isEmpty()) {
+                    ghostCursor = ItemStack.EMPTY;
+                }
+                return true;
+            }
+        }
         if (button == 0 && !dragSpec.isEmpty()) {
             // 「他の場所」に正常に置けたか。CFG → CFG 同一スロットは「移動成功」ではない。
             boolean placedElsewhere = false;

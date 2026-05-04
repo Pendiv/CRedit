@@ -254,28 +254,55 @@ public class TagBar {
             finderSource = IngredientSpec.EMPTY;
             finderTags.clear();
             finderDropdownOpen = false;
+            DIV.credit.Credit.LOGGER.info("[CraftPattern] setFinderSource: cleared (empty input)");
             return;
         }
         IngredientSpec base = spec.unwrap();
-        // Item / Fluid のみ対応
         if (!(base instanceof IngredientSpec.Item) && !(base instanceof IngredientSpec.Fluid)) {
+            DIV.credit.Credit.LOGGER.info("[CraftPattern] setFinderSource: REJECTED non-item/fluid spec={}",
+                base.getClass().getSimpleName());
             return;
         }
         finderSource = base;
         finderTags.clear();
         collectTags(base, finderTags);
         finderDropdownOpen = !finderTags.isEmpty();
+        DIV.credit.Credit.LOGGER.info("[CraftPattern] setFinderSource: spec={} tags={} dropdownOpen={}",
+            describeFinderSource(base), finderTags.size(), finderDropdownOpen);
+    }
+
+    private static String describeFinderSource(IngredientSpec base) {
+        if (base instanceof IngredientSpec.Item it) {
+            ItemStack s = it.stack();
+            return s.isEmpty() ? "Item(EMPTY)" : "Item(" + BuiltInRegistries.ITEM.getKey(s.getItem()) + ")";
+        }
+        if (base instanceof IngredientSpec.Fluid fl) {
+            return fl.stack().isEmpty() ? "Fluid(EMPTY)"
+                : "Fluid(" + net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fl.stack().getFluid()) + ")";
+        }
+        return base.getClass().getSimpleName();
     }
 
     private static void collectTags(IngredientSpec base, java.util.List<ResourceLocation> out) {
         try {
             if (base instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
                 it.stack().getTags().forEach(tk -> out.add(tk.location()));
+                // BlockItem の場合は対応 Block の BlockTags も列挙 (bedrock 等で item tag 空でも block tag を拾える)
+                if (it.stack().getItem() instanceof net.minecraft.world.item.BlockItem bi) {
+                    bi.getBlock().builtInRegistryHolder().tags()
+                        .forEach(tk -> out.add(tk.location()));
+                }
             } else if (base instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
                 fl.stack().getFluid().builtInRegistryHolder().tags()
                     .forEach(tk -> out.add(tk.location()));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            DIV.credit.Credit.LOGGER.warn("[CraftPattern] collectTags failed", e);
+        }
+        // 重複除去 + ソート
+        java.util.LinkedHashSet<ResourceLocation> dedup = new java.util.LinkedHashSet<>(out);
+        out.clear();
+        out.addAll(dedup);
         out.sort(java.util.Comparator.comparing(ResourceLocation::toString));
     }
 
@@ -421,8 +448,38 @@ public class TagBar {
         if (!finderSource.isEmpty()) {
             renderFinderSource(g);
         } else if (!resultStack.isEmpty()) {
-            g.renderItem(resultStack, resultSlotX, resultSlotY);
+            renderResultStack(g);
         }
+    }
+
+    /** resultStack 描画。tag name_tag なら 1秒ごとに含有要素を cycle 表示。 */
+    private void renderResultStack(GuiGraphics g) {
+        long ticks = Minecraft.getInstance().level != null
+            ? Minecraft.getInstance().level.getGameTime()
+            : 0;
+        ResourceLocation itemTag = TagItemHelper.extractTagId(resultStack);
+        if (itemTag != null) {
+            ItemStack cycled = TagItemHelper.cycledItemFromTag(itemTag, ticks);
+            if (cycled != null && !cycled.isEmpty()) {
+                g.renderItem(cycled, resultSlotX, resultSlotY);
+                return;
+            }
+        }
+        ResourceLocation fluidTag = TagItemHelper.extractFluidTagId(resultStack);
+        if (fluidTag != null) {
+            IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+            if (rt != null) {
+                int amount = TagItemHelper.extractFluidTagAmount(resultStack, 1000);
+                net.minecraftforge.fluids.FluidStack cycled =
+                    TagItemHelper.cycledFluidFromTag(fluidTag, amount, ticks);
+                if (cycled != null && !cycled.isEmpty()) {
+                    rt.getIngredientManager().getIngredientRenderer(ForgeTypes.FLUID_STACK)
+                        .render(g, cycled, resultSlotX, resultSlotY);
+                    return;
+                }
+            }
+        }
+        g.renderItem(resultStack, resultSlotX, resultSlotY);
     }
 
     /** cleanroom mode: dropdown header を box 領域に。 */
@@ -936,8 +993,12 @@ public class TagBar {
             rl = ResourceLocation.tryBuild(currentNamespace, input);
         }
 
-        // 自動判定：item tag を優先、なければ fluid tag
+        // 自動判定：item tag → block tag → fluid tag の順
         if (rl != null && TagItemHelper.isKnownItemTag(rl)) {
+            resultStack = TagItemHelper.createTagNameTag(rl);
+        } else if (rl != null && TagItemHelper.isKnownBlockTag(rl)) {
+            // block tag (forge:mineable/wrench 等) も name_tag として保存。
+            // cycledItemFromTag が item tag → block tag の順で fallback するので表示は OK。
             resultStack = TagItemHelper.createTagNameTag(rl);
         } else if (rl != null && TagItemHelper.isKnownFluidTag(rl)) {
             resultStack = TagItemHelper.createFluidTagNameTag(rl, 1000);

@@ -32,7 +32,9 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = Credit.MODID, value = Dist.CLIENT)
 public final class JeiOverlayHandler {
 
-    private static final ResourceLocation DELETE_TEX = new ResourceLocation(Credit.MODID, "ui/delete.png");
+    private static final ResourceLocation DELETE_TEX  = new ResourceLocation(Credit.MODID, "ui/delete.png");
+    private static final ResourceLocation DELETED_TEX = new ResourceLocation(Credit.MODID, "ui/deleted.png");
+    private static final ResourceLocation EDITED_TEX  = new ResourceLocation(Credit.MODID, "ui/edited.png");
     private static final int BTN_W = 16, BTN_H = 16;
     private static final int BTN_SPACING = 2;
     /** "+" 転送ボタンと DELETE 間の縦オフセット。bookmark ボタン (1 段上) を避けるため 2 段上に置く。 */
@@ -153,20 +155,47 @@ public final class JeiOverlayHandler {
         if (!DynamicRecipeDetector.isEditableOrDeletable(mcRecipe, recipeId)) return;
 
         // "+" 強制可視は Render.Pre 側で行う（こちらは描画 / hover のみ）。
-        Rect2i btn = computeDeleteBounds(layout);
-        boolean hover = mx >= btn.getX() && mx < btn.getX() + btn.getWidth()
-                     && my >= btn.getY() && my < btn.getY() + btn.getHeight();
-        if (hover) g.fill(btn.getX() - 1, btn.getY() - 1,
-                          btn.getX() + BTN_W + 1, btn.getY() + BTN_H + 1, 0x66FFFFFF);
-        g.blit(DELETE_TEX, btn.getX(), btn.getY(), 0, 0, BTN_W, BTN_H, BTN_W, BTN_H);
-        if (hover) {
-            // ここに来る時点で recipeId は isEditableOrDeletable で非 null 保証
+        boolean isDeleted = EditDeleteTracker.INSTANCE.isDeleted(recipeId);
+        boolean isEdited  = EditDeleteTracker.INSTANCE.isEdited(recipeId);
+
+        // DELETE button (deleted の場合は deleted.png に差替え + click 不可)
+        Rect2i delBtn = computeDeleteBounds(layout);
+        boolean delHover = mx >= delBtn.getX() && mx < delBtn.getX() + delBtn.getWidth()
+                        && my >= delBtn.getY() && my < delBtn.getY() + delBtn.getHeight();
+        if (delHover && !isDeleted) {
+            g.fill(delBtn.getX() - 1, delBtn.getY() - 1,
+                   delBtn.getX() + BTN_W + 1, delBtn.getY() + BTN_H + 1, 0x66FFFFFF);
+        }
+        g.blit(isDeleted ? DELETED_TEX : DELETE_TEX,
+               delBtn.getX(), delBtn.getY(), 0, 0, BTN_W, BTN_H, BTN_W, BTN_H);
+        if (delHover) {
+            String key = isDeleted ? "gui.credit.delete.already" : "gui.credit.delete.button";
             g.renderTooltip(net.minecraft.client.Minecraft.getInstance().font,
                 List.of(
-                    Component.translatable("gui.credit.delete.button"),
+                    Component.translatable(key),
                     Component.literal(String.valueOf(recipeId)).withStyle(net.minecraft.ChatFormatting.GRAY)
                 ),
                 java.util.Optional.empty(), mx, my);
+        }
+
+        // "+" (EDIT) overlay marker — edited なら edited.png を「+」位置に重ね描画
+        if (isEdited) {
+            Rect2i layoutArea = layout.getRect();
+            Rect2i transferArea = layout.getRecipeTransferButtonArea();
+            int tx = transferArea.getX() + layoutArea.getX();
+            int ty = transferArea.getY() + layoutArea.getY();
+            int tw = transferArea.getWidth();
+            int th = transferArea.getHeight();
+            g.blit(EDITED_TEX, tx, ty, 0, 0, tw, th, tw, th);
+            // hover tooltip
+            if (mx >= tx && mx < tx + tw && my >= ty && my < ty + th) {
+                g.renderTooltip(net.minecraft.client.Minecraft.getInstance().font,
+                    List.of(
+                        Component.translatable("gui.credit.edit.already"),
+                        Component.literal(String.valueOf(recipeId)).withStyle(net.minecraft.ChatFormatting.GRAY)
+                    ),
+                    java.util.Optional.empty(), mx, my);
+            }
         }
     }
 
@@ -207,13 +236,17 @@ public final class JeiOverlayHandler {
         Recipe<?> mcRecipe = (recipe instanceof Recipe<?> r) ? r : null;
         if (!DynamicRecipeDetector.isEditableOrDeletable(mcRecipe, recipeId)) return false;
 
+        // v2.0.11: 既に DELETE 済の recipe へのクリック → block (consume)
         Rect2i del = computeDeleteBounds(layout);
         if (mx >= del.getX() && mx < del.getX() + del.getWidth()
             && my >= del.getY() && my < del.getY() + del.getHeight()) {
+            if (EditDeleteTracker.INSTANCE.isDeleted(recipeId)) {
+                return true;  // consume to suppress, no action
+            }
             DeleteHandler.handle(recipeId);
             return true;
         }
-        // "+" hijack → EDIT 遷移
+        // "+" hijack → EDIT 遷移 (ただし edited 済なら block)
         Rect2i layoutArea = layout.getRect();
         Rect2i transferArea = layout.getRecipeTransferButtonArea();
         int tx = transferArea.getX() + layoutArea.getX();
@@ -221,6 +254,9 @@ public final class JeiOverlayHandler {
         int tw = transferArea.getWidth();
         int th = transferArea.getHeight();
         if (mx >= tx && mx < tx + tw && my >= ty && my < ty + th) {
+            if (EditDeleteTracker.INSTANCE.isEdited(recipeId)) {
+                return true;  // consume to suppress
+            }
             EditHandler.handle(layout, category, recipe, recipeId);
             return true;
         }

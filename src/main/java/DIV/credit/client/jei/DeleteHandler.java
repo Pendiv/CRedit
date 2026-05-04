@@ -51,6 +51,8 @@ public final class DeleteHandler {
             chat(Component.translatable("gui.credit.staging.commit_hint")
                 .withStyle(ChatFormatting.DARK_GRAY));
         }
+        // v2.0.11: mark deleted → JEI overlay で再 click block
+        EditDeleteTracker.INSTANCE.markDeleted(recipeId);
         playClick();
         Credit.LOGGER.info("[CraftPattern] {} DELETE {}",
             DIV.credit.CreditConfig.shouldApplyImmediately(ScriptWriter.OperationKind.DELETE)

@@ -52,6 +52,8 @@ public final class EditHandler {
             chat(Component.translatable("gui.credit.edit.load_failed").withStyle(ChatFormatting.RED));
             return;
         }
+        // v2.0.11: mark edited → JEI overlay で再 click block
+        EditDeleteTracker.INSTANCE.markEdited(recipeId);
         // Edit mode 開始 + JEI 起点フラグ解除（編集モード遷移は OriginTracker と独立）
         BuilderScreen.enterEditMode(recipeId.toString(), category);
         OriginTracker.exit();

@@ -85,6 +85,8 @@
   "gui.credit.edit.success": "[CraftPattern] Edited (remove + add): %s",
   "gui.credit.edit.load_failed": "[CraftPattern] Cannot load this recipe into draft",
   "gui.credit.delete.button": "Delete this recipe",
+  "gui.credit.delete.already": "Already deleted (cleared on /reload or world rejoin)",
+  "gui.credit.edit.already": "Already edited (cleared on /reload or world rejoin)",
   "gui.credit.delete.no_id": "[CraftPattern] Recipe has no stable id (likely dynamic). Cannot delete.",
   "gui.credit.delete.success": "[CraftPattern] Deleted: %s",
   "gui.credit.dump.reload_hint": "[CraftPattern] Run /reload (or /kubejs reload server_scripts) to apply.",

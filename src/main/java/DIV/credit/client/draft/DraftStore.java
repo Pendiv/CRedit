@@ -98,6 +98,10 @@ public class DraftStore {
         if (RecipeTypes.SMOKING.equals(rt))          return new CookingDraft(CookingDraft.Type.SMOKING);
         if (RecipeTypes.CAMPFIRE_COOKING.equals(rt)) return new CookingDraft(CookingDraft.Type.CAMPFIRE);
         if (RecipeTypes.STONECUTTING.equals(rt))     return new StonecuttingDraft();
+        // v2.0.13: jei:fuel カテゴリは FuelDraft で対応 (input item + burnTime numeric)
+        if ("jei".equals(rt.getUid().getNamespace()) && "fuel".equals(rt.getUid().getPath())) {
+            return new FuelDraft();
+        }
 
         // GT システム判定（modId 不問。recipe class が GTRecipe 派生）
         boolean isGt  = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
@@ -160,6 +164,22 @@ public class DraftStore {
         m.put("gtceu:ore_processing_diagram",           UnsupportedReason.VIEWER);
         m.put("gtceu:programmed_circuit",               UnsupportedReason.VIEWER);
         m.put("ldlib:test_category",                    UnsupportedReason.INTERNAL);
+        // v2.0.12: タグ / 情報表示専用 JEI page (recipe ではないので編集不可)
+        m.put("jei:information",                        UnsupportedReason.VIEWER);  // JEI native info page
+        m.put("jei:compostable",                        UnsupportedReason.VIEWER);  // コンポスター (KubeJS 直接 emit 不可)
+        m.put("compostable",                            UnsupportedReason.VIEWER);  // alias (UID 短縮)
+        m.put("jei:anvil",                              UnsupportedReason.VIEWER);  // 金床 (動的、編集不能)
+        m.put("jei:brewing",                            UnsupportedReason.VIEWER);  // 醸造 (potion 動的、KubeJS 特殊 API)
+        // v2.0.13: tag 内容表示 (編集不可)
+        m.put("minecraft:tag_recipes/block",            UnsupportedReason.VIEWER);
+        m.put("minecraft:tag_recipes/item",             UnsupportedReason.VIEWER);
+        m.put("minecraft:tag_recipes/fluid",            UnsupportedReason.VIEWER);
+        // バニラの KubeJS 非対応カテゴリ
+        m.put("minecraft:loom",                         UnsupportedReason.VIEWER);
+        m.put("minecraft:beacon",                       UnsupportedReason.VIEWER);
+        m.put("minecraft:beacon_payment",               UnsupportedReason.VIEWER);
+        m.put("minecraft:repair",                       UnsupportedReason.VIEWER);
+        // ★ jei:fuel は v2.0.13 で FuelDraft 対応 → unsupported から削除
         // Mek 系で KubeJS schema が存在しないため編集しても dump 不能
         m.put("mekanism:sps_casing",                    UnsupportedReason.NO_KUBEJS);
         m.put("mekanism:boiler_casing",                 UnsupportedReason.NO_KUBEJS);
@@ -204,6 +224,8 @@ public class DraftStore {
             || RecipeTypes.SMOKING.equals(rt)
             || RecipeTypes.CAMPFIRE_COOKING.equals(rt)
             || RecipeTypes.STONECUTTING.equals(rt)) return true;
+        // v2.0.13: jei:fuel
+        if ("jei".equals(rt.getUid().getNamespace()) && "fuel".equals(rt.getUid().getPath())) return true;
         boolean isGt     = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
         boolean isMek    = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
         boolean isIe     = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);

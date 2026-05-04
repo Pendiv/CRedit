@@ -593,12 +593,15 @@ public class RecipeArea {
                 }
             } else if (cursorEmpty) {
                 // bare right-click WITH EMPTY CURSOR: increment count by spec step
-                // (cursor 持ったままの右クリは無視 — vanilla では別アクションだから)
                 IngredientSpec current = draft.getSlot(slotIndex);
                 if (!current.isEmpty()) {
+                    // v2.0.12: draft の slot max count を尊重 (1 ロックの slot では何もしない)
+                    int slotCap = draft.slotMaxCount(slotIndex);
+                    if (slotCap <= 1) return true;  // count 増不可
                     int step = current.incrementStep();
                     int next = current.count() + step;
-                    if (next > current.maxCount()) next = step;
+                    int cap = Math.min(current.maxCount(), slotCap);
+                    if (next > cap) next = step;
                     draft.setSlot(slotIndex, IngredientSpec.withCount(current, next));
                     rebuildDrawable();
                 }
@@ -636,10 +639,15 @@ public class RecipeArea {
         IngredientSpec current = draft.getSlot(slotIndex);
         if (current.isEmpty()) return false;
 
+        // v2.0.12: draft の slot max count が 1 (lock) なら scroll を consume するが count は変えない
+        int slotCap = draft.slotMaxCount(slotIndex);
+        if (slotCap <= 1) return true;
+
         int baseStep = current.incrementStep();
         int multiplier = Screen.hasShiftDown() ? 8 : 1;
         int adjust = (delta > 0 ? baseStep : -baseStep) * multiplier;
-        int newCount = Math.max(1, Math.min(current.maxCount(), current.count() + adjust));
+        int cap = Math.min(current.maxCount(), slotCap);
+        int newCount = Math.max(1, Math.min(cap, current.count() + adjust));
         if (newCount != current.count()) {
             draft.setSlot(slotIndex, IngredientSpec.withCount(current, newCount));
             rebuildDrawable();

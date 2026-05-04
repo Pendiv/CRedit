@@ -85,6 +85,8 @@
   "gui.credit.edit.success": "[CraftPattern] 編集 (remove + add) しました: %s",
   "gui.credit.edit.load_failed": "[CraftPattern] このレシピを draft に読み込めませんでした",
   "gui.credit.delete.button": "このレシピを削除",
+  "gui.credit.delete.already": "削除済 (/reload または再入室でクリア)",
+  "gui.credit.edit.already": "編集済 (/reload または再入室でクリア)",
   "gui.credit.delete.no_id": "[CraftPattern] このレシピは安定 ID を持ちません（おそらく動的生成）。削除できません。",
   "gui.credit.delete.success": "[CraftPattern] 削除しました: %s",
   "gui.credit.dump.reload_hint": "[CraftPattern] /reload (または /kubejs reload server_scripts) で適用してください。",

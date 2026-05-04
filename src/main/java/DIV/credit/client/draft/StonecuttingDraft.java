@@ -30,6 +30,15 @@ public class StonecuttingDraft implements RecipeDraft {
     @Override public IngredientSpec getOutput() { return slots[IDX_OUTPUT]; }
     @Override public RecipeType<?> recipeType() { return RecipeTypes.STONECUTTING; }
 
+    /**
+     * v2.0.12: stonecutting input は単一 ingredient (count 非対応)。output は count 指定可。
+     */
+    @Override
+    public int slotMaxCount(int slotIndex) {
+        if (slotIndex == IDX_OUTPUT) return Integer.MAX_VALUE;
+        return 1;
+    }
+
     @Override
     public void setSlot(int i, IngredientSpec s) {
         if (i < 0 || i >= SLOT_COUNT) return;

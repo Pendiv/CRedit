@@ -1,6 +1,5 @@
 buildscript {
     repositories {
-        // These repositories are only for Gradle plugins, put any other repositories in the repository block further below
         maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
         mavenCentral()
     }
@@ -17,11 +16,35 @@ plugins {
 
 apply plugin: 'org.spongepowered.mixin'
 
-group = mod_group_id
-version = mod_version
+// Self-contained mod metadata — does NOT depend on gradle.properties.
+// Works both standalone and as a subproject of GTCsoloEU.
+ext.credit = [
+        mod_id                 : 'credit',
+        mod_name               : 'credit',
+        mod_version            : '2.0.1',
+        mod_group_id           : 'DIV',
+        mod_license            : 'All Rights Reserved',
+        mod_authors            : '',
+        mod_description        : '',
+        minecraft_version      : '1.20.1',
+        minecraft_version_range: '[1.20.1,1.21)',
+        forge_version          : '47.4.15',
+        forge_version_range    : '[47,)',
+        loader_version_range   : '[47,)',
+        mapping_channel        : 'official',
+        mapping_version        : '1.20.1',
+        jei_version            : '15.20.0.115',
+        jade_curse_file        : '6855440',
+        kubejs_version         : '2001.6.5-build.22',
+        rhino_version          : '2001.2.2-build.18',
+        architectury_version   : '9.2.14',
+]
+
+group = credit.mod_group_id
+version = credit.mod_version
 
 base {
-    archivesName = mod_id
+    archivesName = credit.mod_id
 }
 
 java {
@@ -29,176 +52,106 @@ java {
 }
 
 minecraft {
-    // The mappings can be changed at any time and must be in the following format.
-    // Channel:   Version:
-    // official   MCVersion             Official field/method names from Mojang mapping files
-    // parchment  YYYY.MM.DD-MCVersion  Open community-sourced parameter names and javadocs layered on top of official
-    //
-    // You must be aware of the Mojang license when using the 'official' or 'parchment' mappings.
-    // See more information here: https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
-    //
-    // Parchment is an unofficial project maintained by ParchmentMC, separate from MinecraftForge
-    // Additional setup is needed to use their mappings: https://parchmentmc.org/docs/getting-started
-    //
-    // Use non-default mappings at your own risk. They may not always work.
-    // Simply re-run your setup task after changing the mappings to update your workspace.
-    mappings channel: mapping_channel, version: mapping_version
+    mappings channel: credit.mapping_channel, version: credit.mapping_version
 
-    // When true, this property will have all Eclipse/IntelliJ IDEA run configurations run the "prepareX" task for the given run configuration before launching the game.
-    // In most cases, it is not necessary to enable.
-    // enableEclipsePrepareRuns = true
-    // enableIdeaPrepareRuns = true
-
-    // This property allows configuring Gradle's ProcessResources task(s) to run on IDE output locations before launching the game.
-    // It is REQUIRED to be set to true for this template to function.
-    // See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
     copyIdeResources = true
 
-    // When true, this property will add the folder name of all declared run configurations to generated IDE run configurations.
-    // The folder name can be set on a run configuration using the "folderName" property.
-    // By default, the folder name of a run configuration is the name of the Gradle project containing it.
-    // generateRunFolders = true
-
-    // This property enables access transformers for use in development.
-    // They will be applied to the Minecraft artifact.
-    // The access transformer file can be anywhere in the project.
-    // However, it must be at "META-INF/accesstransformer.cfg" in the final mod jar to be loaded by Forge.
-    // This default location is a best practice to automatically put the file in the right place in the final jar.
-    // See https://docs.minecraftforge.net/en/latest/advanced/accesstransformers/ for more information.
-    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
-
-    // Default run configurations.
-    // These can be tweaked, removed, or duplicated as needed.
     runs {
-        // applies to all the run configs below
         configureEach {
             workingDirectory project.file('run')
-
-            // Recommended logging data for a userdev environment
-            // The markers can be added/remove as needed separated by commas.
-            // "SCAN": For mods scan.
-            // "REGISTRIES": For firing of registry events.
-            // "REGISTRYDUMP": For getting the contents of all registries.
             property 'forge.logging.markers', 'REGISTRIES'
-
-
-            // Recommended logging level for the console
-            // You can set various levels here.
-            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             property 'forge.logging.console.level', 'debug'
 
             mods {
-                "${mod_id}" {
+                "${credit.mod_id}" {
                     source sourceSets.main
                 }
             }
         }
 
         client {
-            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
-            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.enabledGameTestNamespaces', credit.mod_id
         }
 
         server {
-            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.enabledGameTestNamespaces', credit.mod_id
             args '--nogui'
         }
 
-        // This run config launches GameTestServer and runs all registered gametests, then exits.
-        // By default, the server will crash when no gametests are provided.
-        // The gametest system is also enabled by default for other run configs under the /test command.
         gameTestServer {
-            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.enabledGameTestNamespaces', credit.mod_id
         }
 
         data {
-            // example of overriding the workingDirectory set in configureEach above
             workingDirectory project.file('run-data')
-
-            // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
-            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+            args '--mod', credit.mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
         }
     }
 }
 
 mixin {
-    add sourceSets.main, "${mod_id}.refmap.json"
+    add sourceSets.main, "${credit.mod_id}.refmap.json"
 
-    config "${mod_id}.mixins.json"
+    config "${credit.mod_id}.mixins.json"
 }
 
-// Include resources generated by data generators.
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
     mavenCentral()
 
-    // JEI
     maven { url = "https://maven.blamejared.com/" }
-    // Jade / Mekanism / その他 CurseForge 配信
     maven { url = "https://cursemaven.com" }
-    // KubeJS / Rhino
     maven {
         url "https://maven.latvian.dev/releases"
         content { includeGroup "dev.latvian.mods" }
     }
-    // Architectury (KubeJS 依存)
     maven { url = "https://maven.architectury.dev" }
 
-    // 親プロジェクトの libs/ を flatDir として参照 (gtceu / ldlib / registrate)
     flatDir { dir '../../libs' }
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    minecraft "net.minecraftforge:forge:${credit.minecraft_version}-${credit.forge_version}"
 
-    // JEI — APIはコンパイル時、本体はランタイム
-    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
-    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}")
-    runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
+    compileOnly fg.deobf("mezz.jei:jei-${credit.minecraft_version}-common-api:${credit.jei_version}")
+    compileOnly fg.deobf("mezz.jei:jei-${credit.minecraft_version}-forge-api:${credit.jei_version}")
+    runtimeOnly fg.deobf("mezz.jei:jei-${credit.minecraft_version}-forge:${credit.jei_version}")
 
-    // Jade — APIも将来使う想定でcompileOnly併用
-    compileOnly fg.deobf("curse.maven:jade-324717:${jade_curse_file}")
-    runtimeOnly fg.deobf("curse.maven:jade-324717:${jade_curse_file}")
+    compileOnly fg.deobf("curse.maven:jade-324717:${credit.jade_curse_file}")
+    runtimeOnly fg.deobf("curse.maven:jade-324717:${credit.jade_curse_file}")
 
-    // KubeJS + 依存（fg.deobfでSRG→officialリマップ）
-    implementation fg.deobf("dev.latvian.mods:kubejs-forge:${kubejs_version}")
-    implementation fg.deobf("dev.latvian.mods:rhino-forge:${rhino_version}")
-    implementation fg.deobf("dev.architectury:architectury-forge:${architectury_version}")
+    implementation fg.deobf("dev.latvian.mods:kubejs-forge:${credit.kubejs_version}")
+    implementation fg.deobf("dev.latvian.mods:rhino-forge:${credit.rhino_version}")
+    implementation fg.deobf("dev.architectury:architectury-forge:${credit.architectury_version}")
 
-    // GTCEu (+ LdLib / Registrate は GTCEu の依存)
     implementation fg.deobf("local:gtceu-1.20.1:1.6.4")
     implementation fg.deobf("local:ldlib-forge-1.20.1:1.0.48")
     implementation fg.deobf("local:Registrate-MC1.20:1.3.3")
 
-    // Mekanism Core
     implementation fg.deobf("curse.maven:mekanism-268560:6552911")
 
-    // Immersive Engineering — IERecipeCategory 等 compile-time access。runtime も担保。
     implementation fg.deobf("curse.maven:immersive-engineering-231951:6206989")
 
-    // Create — JarJar で Registrate/Flywheel/Ponder/MixinExtras 内包。
-    // CreateRecipeCategory 等 compile-time access に使う (現状は reflection-safe なので必須ではないが
-    // 将来 hand-written draft で直接参照したくなった時のために compile dep として置いておく)。
     implementation fg.deobf("curse.maven:create-328085:7178761")
-
-    // DE / AE2 等の追加 mod は dev runtime に入れていない。
-    // 理由: production jar 直置きは Mixin SRG 名解決失敗、fg.deobf は初回フェッチ ~7 分。
-    // 検証は本番 modpack (GTCsoloEU/run/mods/) 側で行う。
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 
-// This block of code expands all declared replace properties in the specified resource targets.
-// A missing property will result in an error. Properties are expanded using ${} Groovy notation.
-// When "copyIdeResources" is enabled, this will also run before the game launches in IDE environments.
-// See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
 tasks.named('processResources', ProcessResources).configure {
-    var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
-                             forge_version       : forge_version, forge_version_range: forge_version_range,
-                             loader_version_range: loader_version_range,
-                             mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
-                             mod_authors         : mod_authors, mod_description: mod_description,]
+    var replaceProperties = [
+            minecraft_version      : credit.minecraft_version,
+            minecraft_version_range: credit.minecraft_version_range,
+            forge_version          : credit.forge_version,
+            forge_version_range    : credit.forge_version_range,
+            loader_version_range   : credit.loader_version_range,
+            mod_id                 : credit.mod_id,
+            mod_name               : credit.mod_name,
+            mod_license            : credit.mod_license,
+            mod_version            : credit.mod_version,
+            mod_authors            : credit.mod_authors,
+            mod_description        : credit.mod_description,
+    ]
 
     inputs.properties replaceProperties
 
@@ -207,73 +160,41 @@ tasks.named('processResources', ProcessResources).configure {
     }
 }
 
-// Example for how to get properties into the manifest for reading at runtime.
 tasks.named('jar', Jar).configure {
     manifest {
-        attributes(["Specification-Title"     : mod_id,
-                    "Specification-Vendor"    : mod_authors,
-                    "Specification-Version"   : "1", // We are version 1 of ourselves
-                    "Implementation-Title"    : project.name,
-                    "Implementation-Version"  : project.jar.archiveVersion,
-                    "Implementation-Vendor"   : mod_authors,
-                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+        attributes([
+                "Specification-Title"     : credit.mod_id,
+                "Specification-Vendor"    : credit.mod_authors,
+                "Specification-Version"   : "1",
+                "Implementation-Title"    : project.name,
+                "Implementation-Version"  : project.jar.archiveVersion,
+                "Implementation-Vendor"   : credit.mod_authors,
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
     }
 
-    // This is the preferred method to reobfuscate your jar file
     finalizedBy 'reobfJar'
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
-}
-
-// ─── 開発環境向け JAR ──────────────────────────────────────
-// 通常 build → reobfJar により本番（obfuscated）jar が出る。これは MC 実行環境向け。
-// 一方、他 MOD の dev runClient に放り込む場合 deobf 名が必要 → devJar (-dev classifier) を作る。
-//
-// 使い方:
-//   ./gradlew build       → build/libs/credit-1.0.0.jar       (本番、reobf 済み)
-//   ./gradlew devJar      → build/libs/credit-1.0.0-dev.jar   (dev env 用、deobf)
-//   ./gradlew allJars     → 両方ビルド
-tasks.register('devJar', Jar) {
-    dependsOn classes
+// dev environment jar (no reobf, official names). For distribution to other IntelliJ dev workspaces.
+task devJar(type: Jar) {
+    archiveClassifier.set('dev')
     from sourceSets.main.output
-    archiveClassifier = 'dev'
+    from sourceSets.main.resources
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes(["Specification-Title"     : mod_id,
-                    "Specification-Vendor"    : mod_authors,
-                    "Specification-Version"   : "1",
-                    "Implementation-Title"    : project.name,
-                    "Implementation-Version"  : project.version,
-                    "Implementation-Vendor"   : mod_authors,
-                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+        attributes([
+                "Specification-Title"     : credit.mod_id,
+                "Specification-Vendor"    : credit.mod_authors,
+                "Specification-Version"   : "1",
+                "Implementation-Title"    : project.name,
+                "Implementation-Version"  : credit.mod_version,
+                "Implementation-Vendor"   : credit.mod_authors,
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
     }
 }
 
-tasks.register('allJars') {
-    dependsOn 'jar', 'devJar'
-}
-
-// ─── GTCsoloEU dev runClient へ deploy ─────────────────────
-// このプロジェクトは GTCsoloEU の MODs/ 下にあるため、相対 ../../run/mods/ が
-// 親プロジェクトの dev 実行ディレクトリ。devJar をそこにコピーすれば親の
-// `./gradlew runClient` で credit が読み込まれる。
-//
-// 使い方:
-//   ./gradlew deployDev                        → ../../run/mods/credit-X.Y.Z-dev.jar に配置
-//   (cd ../.. && ./gradlew runClient)          → GTCsoloEU 環境で起動
-tasks.register('deployDev', Copy) {
-    dependsOn 'devJar'
-    def targetDir = file('../../run/mods')
-    from 'build/libs'
-    into targetDir
-    include "${mod_id}-*-dev.jar"
-    // 旧バージョン除去（同じ mod の複数バージョン同居でクラッシュ防止）
-    doFirst {
-        if (targetDir.exists()) {
-            targetDir.listFiles({ dir, name ->
-                name.startsWith("${mod_id}-") && name.endsWith('.jar')
-            } as FilenameFilter)?.each { it.delete() }
-        }
-    }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }

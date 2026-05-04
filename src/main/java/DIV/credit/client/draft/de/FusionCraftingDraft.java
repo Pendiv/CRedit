@@ -83,6 +83,23 @@ public final class FusionCraftingDraft implements RecipeDraft {
         return SlotKind.ITEM_INPUT;
     }
 
+    /**
+     * v2.0.12: DE fusion_crafting の slot count 制限。
+     * - catalyst (0)  : 無制限 (IngredientStack で count 表現可能)
+     * - result (1)    : 無制限 (count 指定可能)
+     * - ingredients[] : count=1 lock (FusionIngredient JSON は count フィールド非対応)
+     */
+    @Override
+    public int slotMaxCount(int slotIndex) {
+        if (slotIndex == IDX_CATALYST || slotIndex == IDX_RESULT) {
+            return Integer.MAX_VALUE;
+        }
+        if (slotIndex >= IDX_INPUT_0 && slotIndex < slots.length) {
+            return 1;  // ingredients は count 指定不可
+        }
+        return Integer.MAX_VALUE;
+    }
+
     @Override public boolean isOutputSlot(int i) { return i == IDX_RESULT; }
 
     @Override
@@ -111,7 +128,7 @@ public final class FusionCraftingDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Energy", NumericField.Kind.INT,
+            new NumericField("OP", NumericField.Kind.INT,
                 () -> (double) totalEnergy,
                 v -> totalEnergy = (long) v,
                 0, Long.MAX_VALUE)
@@ -120,9 +137,10 @@ public final class FusionCraftingDraft implements RecipeDraft {
 
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        // DE の Recipe は instantiation が複雑（IFusionRecipe 派生 + brandonsCore 依存）。
-        // null → FALLBACK 表示で sample drawable がそのまま映る。
-        return null;
+        // v2.0.13: 現 tier で空 FusionRecipe を構築 → DE が JEI で tier 表示を自前描画
+        // 失敗時 null → FALLBACK で sample 描画 (tier 表示は元のまま)
+        var built = DESupport.tryBuildEmptyFusionRecipe(null, tier.name(), totalEnergy);
+        return built;  // null も許容
     }
 
     /** 既存 IFusionRecipe からスロット内容を流し込む（reflection、DE class 依存しない）。 */

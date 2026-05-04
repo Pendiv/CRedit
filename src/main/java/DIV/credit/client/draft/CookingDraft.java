@@ -78,6 +78,17 @@ public class CookingDraft implements RecipeDraft {
     @Override public IngredientSpec getOutput() { return slots[IDX_OUTPUT]; }
     @Override public RecipeType<?> recipeType() { return type.jeiType; }
 
+    /**
+     * v2.0.12: vanilla 製錬系 input は単一 ingredient (count 概念無し、JSON 非対応)。
+     * output は count > 1 valid (KubeJS で extend 可)。
+     * IDX_FLAME は RENDER_ONLY なのでどうでもいいが念のため lock。
+     */
+    @Override
+    public int slotMaxCount(int slotIndex) {
+        if (slotIndex == IDX_OUTPUT) return Integer.MAX_VALUE;
+        return 1;  // input (0) + flame (1) は 1 lock
+    }
+
     @Override
     public void setSlot(int i, IngredientSpec s) {
         if (i == IDX_FLAME) return; // RENDER_ONLY

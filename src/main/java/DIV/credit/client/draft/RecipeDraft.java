@@ -127,6 +127,16 @@ public interface RecipeDraft {
     /** keepHeldItem 設定。canKeepHeldItem() = false な draft では no-op。 */
     default void setKeepHeldItem(boolean value) {}
 
+    /**
+     * v2.0.12: スロットが count > 1 を持てるか。default は無制限。
+     * 1 を返すと RecipeArea の scroll / right-click による count 増加が block される。
+     * 主な用途: DE ingredients[] (count 指定不可)、vanilla crafting input slot 等。
+     * <p>fluid/gas slot は通常無制限のまま使える。
+     */
+    default int slotMaxCount(int slotIndex) {
+        return Integer.MAX_VALUE;
+    }
+
     // ─── v2.0.0 DE: tier toggle (DRACONIUM/WYVERN/DRACONIC/CHAOTIC) ───
     /** tier toggle UI を表示する適格性。FusionCraftingDraft のみ true。 */
     default boolean canCycleTier() { return false; }
