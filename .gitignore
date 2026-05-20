@@ -20,15 +20,11 @@ hs_err_pid*
 # Common working directory
 run
 
- 
- #   C l a u d e   C o d e   w o r k i n g   d i r e c t o r y 
- 
- c l a u d e c o d e / 
- 
- 
- 
- #   R u n   d a t a 
- 
- r u n - d a t a / 
- 
- claudecode/
+# Claude Code working directory
+claudecode/
+
+# Claude Code settings / state
+.claude/
+
+# Run data
+run-data/

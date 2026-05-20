@@ -44,8 +44,9 @@ public final class GenericDraft implements RecipeDraft {
     private DIV.credit.client.draft.create.HeatLevel heatLevel = DIV.credit.client.draft.create.HeatLevel.NONE;
     // Create keepHeldItem 設定 (item_application/deploying のみ意味あり)
     private boolean keepHeldItem = false;
-    private long durationValue;
-    private long eutValue;
+    /** v2.1.3: NullableLong に統一。get()/set()/isPresent()/clear() で扱う。emit ガード必須。 */
+    private final RecipeDraft.NullableLong duration = new RecipeDraft.NullableLong();
+    private final RecipeDraft.NullableLong eut = new RecipeDraft.NullableLong();
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
     /** v2.0.8 GT cleanroom requirement (e.g. "cleanroom" / "sterile_cleanroom" / null = none). */
     @Nullable private String cleanroomType = null;
@@ -60,7 +61,7 @@ public final class GenericDraft implements RecipeDraft {
 
     private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
                          boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
-                         long duration, long eut, java.util.LinkedHashMap<String, Long> intData) {
+                         long durationInit, long eutInit, java.util.LinkedHashMap<String, Long> intData) {
         this.jeiType = jeiType;
         this.kinds   = kinds;
         this.slots   = new IngredientSpec[kinds.length];
@@ -69,8 +70,9 @@ public final class GenericDraft implements RecipeDraft {
         this.isMek = isMek;
         this.isIe = isIe;
         this.isCreate = isCreate;
-        this.durationValue = duration;
-        this.eutValue = eut;
+        // v2.1.3: probe 由来の初期値は set() で代入 (present=true)。
+        this.duration.set(durationInit);
+        this.eut.set(eutInit);
         if (intData != null) this.intDataValues.putAll(intData);
     }
 
@@ -169,49 +171,14 @@ public final class GenericDraft implements RecipeDraft {
             }
             Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={}",
                 rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate);
-            // v2.0.12: per-slot max count probe (multi-sample)
+            // v2.1.4: GenericDraft 経路 (GT/Mek/IE/Create/AE2/Avaritia) は
+            // 全 system が ingredient JSON に count を書けるので、slot count を MAX_VALUE 固定。
+            // v2.0.12 の probe ロジック (sample 全部 count=1 → 1 lock) は GT で右クリック
+            // count up が block されるバグの原因だったため撤去。
+            // vanilla の crafting/cooking 等は専用 draft (CraftingDraft/CookingDraft 等) で
+            // 直接 override しているため GenericDraft fallback には来ない。
             int[] slotMaxCounts = new int[slotCount];
-            // default: 1 (lock)。いずれかのサンプルで count>1 観測したら MAX_VALUE。
-            for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = 1;
-            // 既に sample.get() の views を見てるので、それに加えて追加 sample で確認
-            try {
-                java.util.List<T> probeSamples = rm.createRecipeLookup(rt).includeHidden().get()
-                    .limit(20).toList();
-                for (T s : probeSamples) {
-                    if (java.util.Arrays.stream(slotMaxCounts).allMatch(v -> v > 1)) break;
-                    var d2 = rm.createRecipeLayoutDrawable(cat, s, empty).orElse(null);
-                    if (d2 == null) continue;
-                    var sViews = d2.getRecipeSlotsView().getSlotViews();
-                    for (int i = 0; i < Math.min(sViews.size(), slotCount); i++) {
-                        if (slotMaxCounts[i] > 1) continue;  // 既に観測済
-                        // ITypedIngredient<ItemStack> のみ count check (fluid/gas は別概念で無制限)
-                        boolean hasMulti = sViews.get(i).getAllIngredients()
-                            .map(o -> (mezz.jei.api.ingredients.ITypedIngredient<?>) o)
-                            .anyMatch(ti -> {
-                                Object obj = ti.getIngredient();
-                                if (obj instanceof net.minecraft.world.item.ItemStack stack) {
-                                    return stack.getCount() > 1;
-                                }
-                                return false;
-                            });
-                        if (hasMulti) slotMaxCounts[i] = Integer.MAX_VALUE;
-                    }
-                }
-                // fluid/gas slot は常に無制限
-                for (int i = 0; i < slotCount; i++) {
-                    SlotKind k = kinds[i];
-                    if (k != SlotKind.ITEM_INPUT && k != SlotKind.ITEM_OUTPUT) {
-                        slotMaxCounts[i] = Integer.MAX_VALUE;
-                    }
-                }
-            } catch (Exception e) {
-                Credit.LOGGER.warn("[CraftPattern] slot count probe failed for {}: {}", rt.getUid(), e.toString());
-                for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = Integer.MAX_VALUE;  // 安全側
-            }
-            int locked = 0;
-            for (int v : slotMaxCounts) if (v == 1) locked++;
-            Credit.LOGGER.info("[CraftPattern] slot count probe for {}: {}/{} slots locked to count=1",
-                rt.getUid(), locked, slotCount);
+            for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = Integer.MAX_VALUE;
 
             GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
             d.cleanroomType = cleanroomInit;
@@ -327,8 +294,8 @@ public final class GenericDraft implements RecipeDraft {
                 Object recipe = layout.getRecipe();
                 if (recipe instanceof net.minecraft.world.item.crafting.Recipe<?> mcr) {
                     var meta = DIV.credit.client.draft.gt.GTSupport.probeMetadata(mcr, jeiType.getUid());
-                    this.durationValue = meta.duration;
-                    this.eutValue = meta.eut;
+                    this.duration.set(meta.duration);
+                    this.eut.set(meta.eut);
                     this.intDataValues.clear();
                     this.intDataValues.putAll(meta.intData);
                     // v2.0.8: cleanroom 要件抽出
@@ -394,13 +361,16 @@ public final class GenericDraft implements RecipeDraft {
 
     /**
      * 通常は null → FALLBACK 表示。
-     * GT カテゴリは空 recipe を構築（duration/EUt/data も適用）→ LdLib widgets が numeric を反映描画。
+     * GT カテゴリは slots 込み recipe を構築 (= preview 真 drawable 用)。 Builder Screen 編集中は
+     * slot overlay で別描画してたが、 preview では JEI drawable に渡す Recipe<?> に slots が無いと描かれない。
      */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
         if (isGt) {
-            return DIV.credit.client.draft.gt.GTSupport.tryBuildEmptyRecipe(
-                jeiType.getUid(), durationValue, eutValue, intDataValues, cleanroomType);
+            long dur = duration.isPresent() ? duration.get() : 0;
+            long eu  = eut.isPresent()      ? eut.get()      : 0;
+            return DIV.credit.client.draft.gt.GTSupport.tryBuildRecipeWithSlots(
+                jeiType.getUid(), dur, eu, intDataValues, cleanroomType, slots, kinds);
         }
         return null;
     }
@@ -409,18 +379,16 @@ public final class GenericDraft implements RecipeDraft {
     public java.util.List<NumericField> numericFields() {
         if (!isGt) return java.util.List.of();
         java.util.List<NumericField> fields = new java.util.ArrayList<>();
-        fields.add(new NumericField("Duration", NumericField.Kind.INT,
-            () -> durationValue, v -> durationValue = (long) v, 1, Integer.MAX_VALUE));
-        // v2.0.10: 非電気機械 (primitive_blast_furnace 等) は EUt を編集不可に。
-        // gtIsElectric は recipe type の multi-sample probe 由来 — 個別レシピの値ではなく型の特性。
+        // v2.1.3: 全 GT 数値 field を一斉 nullable=true 化 (helper.toField 経由)。
+        // 「本来編集不要なのに probe で混ざってしまった field」を null 入力で省略可能に。
+        fields.add(duration.toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE));
         if (gtIsElectric) {
-            fields.add(new NumericField("EUt", NumericField.Kind.INT,
-                () -> eutValue, v -> eutValue = (long) v, 0, Integer.MAX_VALUE));
+            fields.add(eut.toField("EUt", NumericField.Kind.INT, 0, Integer.MAX_VALUE));
         }
-        for (String key : intDataValues.keySet()) {
-            fields.add(new NumericField(prettyDataLabel(key), NumericField.Kind.INT,
-                () -> intDataValues.getOrDefault(key, 0L),
-                v -> intDataValues.put(key, (long) v),
+        // v2.1.3: intData (ebf_temp 等) も nullable=true で intDataField helper 経由。
+        // ConcurrentModification 回避のため key list を snapshot してから iterate。
+        for (String key : new java.util.ArrayList<>(intDataValues.keySet())) {
+            fields.add(RecipeDraft.intDataField(key, prettyDataLabel(key), intDataValues,
                 0, Integer.MAX_VALUE));
         }
         return fields;
@@ -549,11 +517,16 @@ public final class GenericDraft implements RecipeDraft {
         for (String nc : notConsumable)   sb.append("        .notConsumable(").append(nc).append(")\n");
         for (String c  : chancedItemOut)  sb.append("        .chancedOutput(").append(c).append(")\n");
         for (String c  : chancedFlOut)    sb.append("        .chancedFluidOutput(").append(c).append(")\n");
-        sb.append("        .duration(").append(durationValue).append(")");
-        // .EUt(0) は非電気機械 (primitive_blast_furnace 等) で KubeJS エラーになるため skip。
-        // 電気機械なら EUt は最低 1 (ULV) なので、0 = 「非電気」と判定して安全。
-        if (eutValue > 0) {
-            sb.append("\n        .EUt(").append(eutValue).append(")");
+        // v2.1.3: duration nullable=true。未設定なら .duration(...) ごと省略 (= デフォルト時間)。
+        if (duration.isPresent()) {
+            sb.append("        .duration(").append(duration.get()).append(")");
+        }
+        // .EUt(0) は非電気機械で KubeJS エラーになるため skip。電気機械なら EUt 最低 1 (ULV) なので
+        // 0 = 「非電気」と判定して安全。null 化 (eut.isPresent=false) でも skip。
+        if (eut.isPresent() && eut.get() > 0) {
+            // duration が isPresent=false で sb 末尾に改行が無い時もあるが、出力フォーマットは
+            // KubeJS が許容するので neglect (見た目軽微)。
+            sb.append("\n        .EUt(").append(eut.get()).append(")");
         }
         // 既知の data パラメータを named method として追加
         if (intDataValues.containsKey("ebf_temp")) {

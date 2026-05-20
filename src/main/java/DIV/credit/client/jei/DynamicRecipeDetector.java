@@ -14,17 +14,18 @@ import java.util.Set;
  */
 public final class DynamicRecipeDetector {
 
-    /** Namespace blocklist: この modid のレシピは全て dynamic 扱い。 */
+    /**
+     * Namespace blocklist: この modid のレシピは全て dynamic 扱い。
+     * <p>v2.1.2: avaritia / re_avaritia を削除。v2.0 時点では credit 未対応で暫定 blocklist だったが、
+     * v2.1 の AvaritiaSupport で対応済 → +/delete 表示すべき。
+     */
     private static final Set<String> DYNAMIC_NAMESPACES = Set.of(
-        "re_avaritia",     // Avaritia: ICompressorRecipe / ITierCraftingRecipe は data 駆動の動的生成
-        "avaritia"         // 旧 Avaritia 系を念のため
+        // (現状空) — 必要に応じて modpack 固有の動的 namespace を追加
     );
 
     /** クラス名 prefix blocklist: getClass().getName() がこの prefix で始まれば dynamic。 */
     private static final Set<String> DYNAMIC_CLASS_PREFIXES = Set.of(
-        "committee.nova.mods.avaritia.common.crafting.recipe.CompressorRecipe",
-        "committee.nova.mods.avaritia.common.crafting.recipe.ExtremeShapedRecipe",
-        "committee.nova.mods.avaritia.common.crafting.recipe.ExtremeShapelessRecipe"
+        // (現状空) — v2.0 時点の Avaritia 暫定 blocklist は v2.1 で削除済
     );
 
     private DynamicRecipeDetector() {}
@@ -46,6 +47,10 @@ public final class DynamicRecipeDetector {
     /** ID なしレシピも edit/delete 不能扱い（remove 対象が確定できないため）。 */
     public static boolean isEditableOrDeletable(@Nullable Recipe<?> recipe, @Nullable ResourceLocation recipeId) {
         if (recipeId == null) return false;
+        // v2.1.3: /guide 末尾は MOD が JEI に追加する説明用 entry (recipe ではない)。
+        // 例: ae2:charger/guide, ae2:entropy/guide, ae2:item_transformation/guide。
+        // これらに edit/delete を許すと「無意味な edit が staging 登録される」バグを起こす。
+        if (recipeId.getPath().endsWith("/guide")) return false;
         return !isDynamic(recipe, recipeId);
     }
 }

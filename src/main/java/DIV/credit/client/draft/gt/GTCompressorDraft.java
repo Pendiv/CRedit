@@ -30,8 +30,9 @@ public class GTCompressorDraft implements RecipeDraft {
 
     private final RecipeType<?>     jeiType;
     private final IngredientSpec[]  slots = new IngredientSpec[SLOT_COUNT];
-    private int  duration = 200;
-    private long EUt      = 2;
+    // v2.1.3: NullableLong に統一。default 初期値あり (present=true)。
+    private final RecipeDraft.NullableLong duration = new RecipeDraft.NullableLong(200);
+    private final RecipeDraft.NullableLong EUt      = new RecipeDraft.NullableLong(2);
 
     public GTCompressorDraft(RecipeType<?> jeiType) {
         this.jeiType = jeiType;
@@ -56,8 +57,8 @@ public class GTCompressorDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Duration", NumericField.Kind.INT, () -> duration, v -> duration = (int) v, 1, Integer.MAX_VALUE),
-            new NumericField("EUt",      NumericField.Kind.INT, () -> EUt,      v -> EUt      = (long) v, 0, Integer.MAX_VALUE)
+            duration.toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
+            EUt.toField("EUt",          NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
     }
 
@@ -81,8 +82,8 @@ public class GTCompressorDraft implements RecipeDraft {
             b.outputItems(it.stack());
         }
 
-        b.duration(duration);
-        b.EUt(EUt);
+        if (duration.isPresent()) b.duration((int) duration.get());
+        if (EUt.isPresent())      b.EUt(EUt.get());
 
         GTRecipe r = b.buildRawRecipe();
         return r;
@@ -115,8 +116,11 @@ public class GTCompressorDraft implements RecipeDraft {
         } else {
             sb.append("        .itemOutputs(").append(outJs).append(")\n");
         }
-        sb.append("        .duration(").append(duration).append(")\n");
-        sb.append("        .EUt(").append(EUt).append(");\n");
+        boolean hasDuration = duration.isPresent();
+        boolean hasEUt      = EUt.isPresent();
+        if (hasDuration) sb.append("        .duration(").append(duration.get()).append(")");
+        if (hasEUt)      sb.append(hasDuration ? "\n" : "").append("        .EUt(").append(EUt.get()).append(")");
+        sb.append(";\n");
         return sb.toString();
     }
 }

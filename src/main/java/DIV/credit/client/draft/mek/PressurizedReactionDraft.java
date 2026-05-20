@@ -43,8 +43,9 @@ public class PressurizedReactionDraft implements RecipeDraft {
 
     private final RecipeType<?>     jeiType;
     private final IngredientSpec[]  slots = new IngredientSpec[SLOT_COUNT];
-    private int  duration       = 100;
-    private long energyRequired = 0;
+    // v2.1.3: NullableLong に統一。default present=true。
+    private final RecipeDraft.NullableLong duration       = new RecipeDraft.NullableLong(100);
+    private final RecipeDraft.NullableLong energyRequired = new RecipeDraft.NullableLong(0);
 
     public PressurizedReactionDraft(RecipeType<?> jeiType) {
         this.jeiType = jeiType;
@@ -79,8 +80,8 @@ public class PressurizedReactionDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Duration", NumericField.Kind.INT, () -> duration,       v -> duration = (int) v,       1, Integer.MAX_VALUE),
-            new NumericField("Energy",   NumericField.Kind.INT, () -> energyRequired, v -> energyRequired = (long) v, 0, Integer.MAX_VALUE)
+            duration      .toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
+            energyRequired.toField("Energy",   NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
     }
 
@@ -117,8 +118,8 @@ public class PressurizedReactionDraft implements RecipeDraft {
 
                     new ResourceLocation(Credit.MODID, "draft_reaction_" + (++DRAFT_COUNTER)),
                 itemIng, fluidIng, gasIng,
-                FloatingLong.create(energyRequired),
-                duration,
+                FloatingLong.create(energyRequired.isPresent() ? energyRequired.get() : 0),
+                (int) (duration.isPresent() ? duration.get() : 100),
                 outItemForRecipe,
                 outGasForRecipe);
         } catch (Exception e) {
@@ -162,8 +163,10 @@ public class PressurizedReactionDraft implements RecipeDraft {
         if (outGasSpec instanceof IngredientSpec.Gas oG && oG.gasId() != null) {
             sb.append("        gasOutput: '").append(oG.gasId()).append(" ").append(oG.amount()).append("',\n");
         }
-        sb.append("        duration: ").append(duration).append(",\n");
-        sb.append("        energyRequired: ").append(energyRequired).append("\n");
+        boolean hasDur = duration.isPresent();
+        boolean hasEng = energyRequired.isPresent();
+        if (hasDur) sb.append("        duration: ").append(duration.get()).append(hasEng ? ",\n" : "\n");
+        if (hasEng) sb.append("        energyRequired: ").append(energyRequired.get()).append("\n");
         sb.append("    }).id('").append(recipeId).append("');\n");
         return sb.toString();
     }

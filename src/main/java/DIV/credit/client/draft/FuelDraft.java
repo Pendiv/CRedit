@@ -25,7 +25,8 @@ public final class FuelDraft implements RecipeDraft {
     public static final RecipeType<?> RECIPE_TYPE = new RecipeType<>(JEI_TYPE, Object.class);
 
     private final IngredientSpec[] slots = new IngredientSpec[SLOT_COUNT];
-    private int burnTime = 200;  // default 1 石炭 = 1600 tick だが控えめに
+    // v2.1.3: NullableLong に統一。default 200 (present=true)。
+    private final RecipeDraft.NullableLong burnTime = new RecipeDraft.NullableLong(200);
 
     public FuelDraft() {
         for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
@@ -54,12 +55,7 @@ public final class FuelDraft implements RecipeDraft {
     /** 燃焼時間 (tick) を numeric field として expose。label「Burn Time」。 */
     @Override
     public List<NumericField> numericFields() {
-        return List.of(
-            new NumericField("BurnTime", NumericField.Kind.INT,
-                () -> (double) burnTime,
-                v -> burnTime = (int) Math.max(1, v),
-                1, Integer.MAX_VALUE)
-        );
+        return List.of(burnTime.toField("BurnTime", NumericField.Kind.INT, 1, Integer.MAX_VALUE));
     }
 
     @Override
@@ -71,8 +67,9 @@ public final class FuelDraft implements RecipeDraft {
     public String emit(String recipeId) {
         IngredientSpec input = slots[IDX_INPUT].unwrap();
         if (!(input instanceof IngredientSpec.Item it) || it.stack().isEmpty()) return null;
+        if (!burnTime.isPresent()) return null;  // event.fuel は引数 2 つ必須、null 化されたら emit 不可
         ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-        return "    event.fuel('" + rl + "', " + burnTime + ");\n";
+        return "    event.fuel('" + rl + "', " + burnTime.get() + ");\n";
     }
 
     @Override
@@ -101,7 +98,7 @@ public final class FuelDraft implements RecipeDraft {
             try {
                 var m = recipe.getClass().getMethod("getBurnTime");
                 Object res = m.invoke(recipe);
-                if (res instanceof Integer bt) burnTime = bt;
+                if (res instanceof Integer bt) burnTime.set(bt);
             } catch (Exception ignored) {}
             return true;
         } catch (Exception e) {

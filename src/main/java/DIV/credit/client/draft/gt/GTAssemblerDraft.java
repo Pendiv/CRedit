@@ -37,8 +37,9 @@ public class GTAssemblerDraft implements RecipeDraft {
 
     private final RecipeType<?>     jeiType;
     private final IngredientSpec[]  slots = new IngredientSpec[SLOT_COUNT];
-    private int  duration = 200;
-    private long EUt      = 30; // LV default
+    // v2.1.3: NullableLong に統一。default 初期値あり (present=true)。
+    private final RecipeDraft.NullableLong duration = new RecipeDraft.NullableLong(200);
+    private final RecipeDraft.NullableLong EUt      = new RecipeDraft.NullableLong(30); // LV default
 
     public GTAssemblerDraft(RecipeType<?> jeiType) {
         this.jeiType = jeiType;
@@ -86,8 +87,8 @@ public class GTAssemblerDraft implements RecipeDraft {
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("Duration", NumericField.Kind.INT, () -> duration, v -> duration = (int) v, 1, Integer.MAX_VALUE),
-            new NumericField("EUt",      NumericField.Kind.INT, () -> EUt,      v -> EUt      = (long) v, 0, Integer.MAX_VALUE)
+            duration.toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
+            EUt.toField("EUt",          NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
     }
 
@@ -120,8 +121,8 @@ public class GTAssemblerDraft implements RecipeDraft {
             b.inputFluids(FluidIngredient.of(tk, ftag.amount()));
         }
 
-        b.duration(duration);
-        b.EUt(EUt);
+        if (duration.isPresent()) b.duration((int) duration.get());
+        if (EUt.isPresent())      b.EUt(EUt.get());
         return b.buildRawRecipe();
     }
 
@@ -164,8 +165,11 @@ public class GTAssemblerDraft implements RecipeDraft {
         for (String nc : notConsumable) {
             sb.append("        .notConsumable(").append(nc).append(")\n");
         }
-        sb.append("        .duration(").append(duration).append(")\n");
-        sb.append("        .EUt(").append(EUt).append(");\n");
+        boolean hasDur = duration.isPresent();
+        boolean hasEUt = EUt.isPresent();
+        if (hasDur) sb.append("        .duration(").append(duration.get()).append(")");
+        if (hasEUt) sb.append(hasDur ? "\n" : "").append("        .EUt(").append(EUt.get()).append(")");
+        sb.append(";\n");
         return sb.toString();
     }
 }

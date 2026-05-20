@@ -58,23 +58,38 @@ public class CommitScreen extends Screen {
         this.listH = this.height - HEADER_H - FOOTER_H;
         this.visibleRows = Math.max(1, this.listH / ROW_H);
 
-        int btnW = 100;
+        // v3.10: 4 ボタン横並び (= preview / approve / reject / close)
+        int btnW = 90;
+        int gap = 8;
+        int totalW = btnW * 4 + gap * 3;
+        int firstX = this.width / 2 - totalW / 2;
         int btnY = this.height - FOOTER_H + 8;
+        addRenderableWidget(Button.builder(
+                Component.translatable("gui.credit.commit.preview"),
+                b -> openPreview())
+            .bounds(firstX, btnY, btnW, 20)
+            .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.credit.commit.approve_all"),
                 b -> approveAll())
-            .bounds(this.width / 2 - btnW - 110, btnY, btnW, 20)
+            .bounds(firstX + (btnW + gap), btnY, btnW, 20)
             .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.credit.commit.reject_all"),
                 b -> rejectAll())
-            .bounds(this.width / 2 - btnW / 2, btnY, btnW, 20)
+            .bounds(firstX + (btnW + gap) * 2, btnY, btnW, 20)
             .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.credit.commit.close"),
                 b -> onClose())
-            .bounds(this.width / 2 + 110, btnY, btnW, 20)
+            .bounds(firstX + (btnW + gap) * 3, btnY, btnW, 20)
             .build());
+    }
+
+    /** v3.10: preview ボタン → 未 push view を開く (= default ADD)。 */
+    private void openPreview() {
+        DIV.credit.client.changed.PreviewLauncher.open(this,
+            DIV.credit.client.changed.ChangedRecipeCollector.ViewMode.USER_ADD);
     }
 
     private void approveAll() {

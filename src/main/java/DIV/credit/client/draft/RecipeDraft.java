@@ -13,6 +13,7 @@ import net.minecraft.world.item.crafting.Recipe;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 
@@ -30,6 +31,18 @@ public interface RecipeDraft {
 
     /** drawable 再生成用の Recipe 実体。 */
     Recipe<?> toRecipeInstance();
+
+    /**
+     * v3.0.0: preview 描画用の Recipe 実体。
+     * default 実装 = {@link #toRecipeInstance()} を委譲。
+     * <p>preview 専用に高品質合成 (= placeholder 不使用) や、 toRecipeInstance() が
+     * null 返す draft で preview だけ別経路で合成したいケースは override する。
+     * <p>戻りが null なら preview スコープ外 (= PreviewBus が silent fail + chat 通知)。
+     */
+    @Nullable
+    default Recipe<?> synthesizePreviewRecipe() {
+        return toRecipeInstance();
+    }
 
     RecipeType<?> recipeType();
 
@@ -147,15 +160,82 @@ public interface RecipeDraft {
     /** tier を 1 段切替。forward=true で次、false で前。canCycleTier=false なら no-op。 */
     default void cycleTier(boolean forward) {}
 
+    /**
+     * 数値入力フィールド宣言。
+     * <p>v2.1.3: nullable 拡張。{@link #nullable} = true の field は UI で "null" 入力受付、
+     * {@link #isPresent} が false を返している間は emit から行ごと省略される。
+     * {@link #clearer} は null 化操作。nullable=false な field では旧挙動 (= 常に present)。
+     */
     record NumericField(
         String label,
         Kind kind,
         DoubleSupplier getter,
         DoubleConsumer setter,
         double min,
-        double max
+        double max,
+        boolean nullable,
+        BooleanSupplier isPresent,
+        Runnable clearer
     ) {
         public enum Kind { INT, FLOAT }
+
+        /** 旧 6-arg 互換: nullable=false / always-present / no-op clearer。既存 draft はこれで動く。 */
+        public NumericField(String label, Kind kind, DoubleSupplier getter, DoubleConsumer setter,
+                            double min, double max) {
+            this(label, kind, getter, setter, min, max, false, () -> true, () -> {});
+        }
+    }
+
+    /**
+     * v2.1.3: long 値 + present フラグの軽量コンテナ。
+     * <ul>
+     *   <li>{@link #set} で値設定 → 自動 present 化 (= "触ったら復活")</li>
+     *   <li>{@link #clear} で null 化</li>
+     *   <li>{@link #toField} で NumericField (nullable=true) 直接生成</li>
+     * </ul>
+     * 各 draft の long primitive フィールドを置換して使う。
+     */
+    final class NullableLong {
+        private long value;
+        private boolean present = true;
+
+        public NullableLong() {}
+        public NullableLong(long initial) { this.value = initial; this.present = true; }
+
+        public long get()         { return value; }
+        public boolean isPresent(){ return present; }
+        public void set(long v)   { this.value = v; this.present = true; }
+        public void clear()       { this.present = false; this.value = 0; }
+        /** present 状態は触らず、内部値だけ書く (初期化 / probe からの populate 用)。 */
+        public void setSilently(long v) { this.value = v; }
+        /** present フラグだけ書く (NBT 復元用)。 */
+        public void setPresent(boolean p) { this.present = p; if (!p) this.value = 0; }
+
+        public NumericField toField(String label, NumericField.Kind kind, double min, double max) {
+            return new NumericField(label, kind,
+                () -> (double) value,
+                v -> set((long) v),
+                min, max,
+                true,
+                () -> present,
+                this::clear);
+        }
+    }
+
+    /**
+     * v2.1.3: {@link java.util.Map} key 1 個分を nullable NumericField として公開。
+     * present 判定 = map.containsKey(key) / setter = put / clearer = remove。
+     */
+    static NumericField intDataField(String key, String label,
+                                     java.util.Map<String, Long> map,
+                                     double min, double max) {
+        return new NumericField(label, NumericField.Kind.INT,
+            () -> (double) map.getOrDefault(key, 0L),
+            v -> map.put(key, (long) v),
+            min, max,
+            true,
+            () -> map.containsKey(key),
+            () -> map.remove(key));
     }
 
     /** recipeId 自動生成用：出力アイテムのレジストリ ID パス。 */
@@ -195,13 +275,12 @@ public interface RecipeDraft {
         return ItemStack.EMPTY;
     }
 
-    /** KubeJS 単数文字列（count 無視）：Item は 'ns:path'、Tag は '#ns:path'。 */
+    /** KubeJS 単数文字列（count 無視）：Item は 'ns:path'、Tag は '#ns:path'。NBT 持ちは Item.of(...).strongNBT()。 */
     @Nullable
     static String formatIngredientString(IngredientSpec s) {
         if (s != null) s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            return "'" + rl + "'";
+            return formatItemStringWithNbt(it.stack(), 1);
         }
         if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
             return "'#" + tg.tagId() + "'";
@@ -209,15 +288,14 @@ public interface RecipeDraft {
         return null;
     }
 
-    /** count > 1 のとき Item.of(id, count)。それ以外は単数。Tag は count 表現が無いので単数のまま。 */
+    /** count > 1 のとき Item.of(id, count)。NBT 持ちは Item.of(id, count, '<nbt>').strongNBT()。 */
     @Nullable
     static String formatIngredientWithCount(IngredientSpec s) {
         if (s == null || s.isEmpty()) return null;
         int c = s.count();
         s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            return c <= 1 ? "'" + rl + "'" : "Item.of('" + rl + "', " + c + ")";
+            return formatItemStringWithNbt(it.stack(), c);
         }
         if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
             // Tag with count > 1: KubeJS で 1 文字列表現できないので、shapeless 等は emitter 側で複製
@@ -229,7 +307,29 @@ public interface RecipeDraft {
     @Nullable
     static String formatItemString(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return null;
+        return formatItemStringWithNbt(stack, stack.getCount());
+    }
+
+    /**
+     * v2.1.5: ItemStack を KubeJS ingredient 文字列に変換。NBT 対応。
+     * - 単純 (NBT 無し, count=1): 'ns:path'
+     * - count > 1, NBT 無し:    Item.of('ns:path', count)
+     * - NBT 持ち (Singularity 等): Item.of('ns:path', count, '<nbt>').strongNBT()
+     */
+    static String formatItemStringWithNbt(ItemStack stack, int count) {
         ResourceLocation rl = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (stack.hasTag()) {
+            String nbtStr = stack.getTag().toString();
+            // single-quoted JS string: backslash, single quote をエスケープ
+            String escaped = nbtStr.replace("\\", "\\\\").replace("'", "\\'");
+            if (count > 1) {
+                return "Item.of('" + rl + "', " + count + ", '" + escaped + "').strongNBT()";
+            }
+            return "Item.of('" + rl + "', '" + escaped + "').strongNBT()";
+        }
+        if (count > 1) {
+            return "Item.of('" + rl + "', " + count + ")";
+        }
         return "'" + rl + "'";
     }
 }

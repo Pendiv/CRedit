@@ -41,6 +41,12 @@ public final class CreditCommand {
             .then(Commands.literal("commit").executes(CreditCommand::doCommit))
             .then(Commands.literal("history").executes(CreditCommand::doHistory))
             .then(Commands.literal("setting").executes(CreditCommand::doSetting))
+            .then(Commands.literal("import").executes(CreditCommand::doImport))
+            .then(Commands.literal("reconstruction").executes(CreditCommand::doReconstruction))
+            .then(Commands.literal("preview").executes(CreditCommand::doPreview))
+            .then(Commands.literal("help")
+                .then(Commands.literal("error").executes(CreditCommand::doHelpError))
+                .then(Commands.literal("null").executes(CreditCommand::doHelpNull)))
             .then(Commands.literal("status").executes(CreditCommand::doStatus));
         event.getDispatcher().register(root);
 
@@ -53,13 +59,65 @@ public final class CreditCommand {
         boolean omitPrefix = false;
         try { omitPrefix = DIV.credit.CreditConfig.OMIT_MODID_PREFIX.get(); } catch (Exception ignored) {}
         if (omitPrefix) {
-            event.getDispatcher().register(Commands.literal("push")   .executes(CreditCommand::doPush));
-            event.getDispatcher().register(Commands.literal("commit") .executes(CreditCommand::doCommit));
-            event.getDispatcher().register(Commands.literal("history").executes(CreditCommand::doHistory));
-            event.getDispatcher().register(Commands.literal("setting").executes(CreditCommand::doSetting));
-            event.getDispatcher().register(Commands.literal("status") .executes(CreditCommand::doStatus));
-            DIV.credit.Credit.LOGGER.info("[CraftPattern] Registered top-level command aliases (/commit /push /history /setting /status)");
+            event.getDispatcher().register(Commands.literal("push")          .executes(CreditCommand::doPush));
+            event.getDispatcher().register(Commands.literal("commit")        .executes(CreditCommand::doCommit));
+            event.getDispatcher().register(Commands.literal("history")       .executes(CreditCommand::doHistory));
+            event.getDispatcher().register(Commands.literal("setting")       .executes(CreditCommand::doSetting));
+            event.getDispatcher().register(Commands.literal("import")        .executes(CreditCommand::doImport));
+            event.getDispatcher().register(Commands.literal("reconstruction").executes(CreditCommand::doReconstruction));
+            event.getDispatcher().register(Commands.literal("preview").executes(CreditCommand::doPreview));
+            event.getDispatcher().register(Commands.literal("status")        .executes(CreditCommand::doStatus));
+            DIV.credit.Credit.LOGGER.info("[CraftPattern] Registered top-level command aliases (/commit /push /history /setting /import /reconstruction /preview /status)");
         }
+    }
+
+    /**
+     * v2.1.2: /credit import → <minecraft>/credit/import/ をスキャン。
+     * フォルダが無ければ作って案内 chat、あれば ImportRunner に処理を委譲。
+     */
+    private static int doImport(CommandContext<CommandSourceStack> ctx) {
+        Minecraft mc = Minecraft.getInstance();
+        mc.tell(DIV.credit.client.importer.ImportRunner::run);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** v2.1.2: /credit help error → KubeJS error の自己復旧手順を chat に出す。 */
+    private static int doHelpError(CommandContext<CommandSourceStack> ctx) {
+        chat(Component.translatable("gui.credit.help.error.l1").withStyle(ChatFormatting.GOLD));
+        chat(Component.translatable("gui.credit.help.error.l2").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.error.l3").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.error.l4").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.error.l5").withStyle(ChatFormatting.YELLOW));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /**
+     * v2.1.4: /credit reconstruction → 既存 generated/ 配下の .js を再解釈して
+     * 現行コード生成規則 + UNIFIED_EDIT_FILES 設定で書き直す。詳細は ReconstructionRunner。
+     */
+    private static int doReconstruction(CommandContext<CommandSourceStack> ctx) {
+        Minecraft mc = Minecraft.getInstance();
+        mc.tell(DIV.credit.client.importer.ReconstructionRunner::run);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** v3.9: /credit preview (一本化) → default ADD で開き、 画面内 dropdown で切替。 */
+    private static int doPreview(CommandContext<CommandSourceStack> ctx) {
+        DIV.credit.client.changed.PreviewLauncher.open(
+            Minecraft.getInstance().screen,
+            DIV.credit.client.changed.ChangedRecipeCollector.ViewMode.USER_ADD);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** v2.1.3: /credit help null → 数値フィールド null 化の使い方 + 注意。 */
+    private static int doHelpNull(CommandContext<CommandSourceStack> ctx) {
+        chat(Component.translatable("gui.credit.help.null.l1").withStyle(ChatFormatting.GOLD));
+        chat(Component.translatable("gui.credit.help.null.l2").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.null.l3").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.null.l4").withStyle(ChatFormatting.GRAY));
+        chat(Component.translatable("gui.credit.help.null.l5").withStyle(ChatFormatting.YELLOW));
+        chat(Component.translatable("gui.credit.help.null.l6").withStyle(ChatFormatting.YELLOW));
+        return Command.SINGLE_SUCCESS;
     }
 
     /** /credit setting または /craftpattern_setting → SettingsScreen を開く。 */
@@ -98,7 +156,9 @@ public final class CreditCommand {
         int ok = 0, fail = 0;
         java.util.List<DIV.credit.client.history.HistoryEntry.Item> historyItems = new java.util.ArrayList<>();
         for (StagedChange c : committed) {
-            ScriptWriter.DumpResult r = ScriptWriter.writeStagedCode(c.kind, c.modid, c.codeBody);
+            ScriptWriter.DumpResult r = c.imported
+                ? ScriptWriter.writeImportedCode(c.kind, c.modid, c.codeBody, c.jeiCategoryUid)
+                : ScriptWriter.writeStagedCode(c.kind, c.modid, c.codeBody, c.jeiCategoryUid);
             boolean success = !(r instanceof ScriptWriter.DumpResult.Failure);
             String filePath = (r.path() != null) ? r.path().toString() : null;
             historyItems.add(new DIV.credit.client.history.HistoryEntry.Item(
@@ -113,10 +173,13 @@ public final class CreditCommand {
         }
         // History record (1 push = 1 entry)
         if (!historyItems.isEmpty()) {
+            long ts = System.currentTimeMillis();
             DIV.credit.client.history.HistoryStore.INSTANCE.record(
-                new DIV.credit.client.history.HistoryEntry(System.currentTimeMillis(),
+                new DIV.credit.client.history.HistoryEntry(ts,
                     DIV.credit.client.history.HistoryEntry.Kind.PUSHED, historyItems));
             DIV.credit.client.history.HistoryPersistence.save();
+            // v3.10: payload (= codeBody 列) を別ファイルに保存。 preview 過去世代用 lazy load
+            DIV.credit.client.history.PushPayloadStore.save(ts, committed);
         }
         StagingArea.INSTANCE.removeAllCommitted();
         StagingPersistence.save();

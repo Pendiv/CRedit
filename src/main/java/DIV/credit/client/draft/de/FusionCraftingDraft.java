@@ -41,7 +41,8 @@ public final class FusionCraftingDraft implements RecipeDraft {
     private final RecipeType<?> jeiType;
     private final IngredientSpec[] slots;
     private DETechLevel tier = DETechLevel.WYVERN;
-    private long totalEnergy = 1_000_000L;
+    // v2.1.3: NullableLong に統一。default 1M (present=true)。
+    private final RecipeDraft.NullableLong totalEnergy = new RecipeDraft.NullableLong(1_000_000L);
 
     private FusionCraftingDraft(RecipeType<?> rt, int slotCount) {
         this.jeiType = rt;
@@ -115,8 +116,8 @@ public final class FusionCraftingDraft implements RecipeDraft {
 
     public DETechLevel getTier() { return tier; }
     public void setTier(DETechLevel t) { if (t != null) this.tier = t; }
-    public long getTotalEnergy() { return totalEnergy; }
-    public void setTotalEnergy(long e) { this.totalEnergy = Math.max(0, e); }
+    public long getTotalEnergy() { return totalEnergy.get(); }
+    public void setTotalEnergy(long e) { this.totalEnergy.set(Math.max(0, e)); }
 
     @Override public boolean canCycleTier() { return true; }
     @Override public String  getTierLabel() { return tier.displayName; }
@@ -127,19 +128,15 @@ public final class FusionCraftingDraft implements RecipeDraft {
 
     @Override
     public List<NumericField> numericFields() {
-        return List.of(
-            new NumericField("OP", NumericField.Kind.INT,
-                () -> (double) totalEnergy,
-                v -> totalEnergy = (long) v,
-                0, Long.MAX_VALUE)
-        );
+        return List.of(totalEnergy.toField("OP", NumericField.Kind.INT, 0, Long.MAX_VALUE));
     }
 
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
         // v2.0.13: 現 tier で空 FusionRecipe を構築 → DE が JEI で tier 表示を自前描画
         // 失敗時 null → FALLBACK で sample 描画 (tier 表示は元のまま)
-        var built = DESupport.tryBuildEmptyFusionRecipe(null, tier.name(), totalEnergy);
+        long energy = totalEnergy.isPresent() ? totalEnergy.get() : 1_000_000L;  // recipe instance 用 fallback
+        var built = DESupport.tryBuildEmptyFusionRecipe(null, tier.name(), energy);
         return built;  // null も許容
     }
 
@@ -213,8 +210,8 @@ public final class FusionCraftingDraft implements RecipeDraft {
             try {
                 var m = recipe.getClass().getMethod(methodName);
                 Object res = m.invoke(recipe);
-                if (res instanceof Long l) { this.totalEnergy = l; return; }
-                if (res instanceof Integer i) { this.totalEnergy = i; return; }
+                if (res instanceof Long l) { this.totalEnergy.set(l); return; }
+                if (res instanceof Integer i) { this.totalEnergy.set(i); return; }
             } catch (Exception ignored) {}
         }
     }

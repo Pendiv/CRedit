@@ -48,27 +48,31 @@ public class CookingDraft implements RecipeDraft {
 
     private final Type type;
     private final IngredientSpec[] slots = new IngredientSpec[SLOT_COUNT];
+    // v2.1.3: xp (float) は個別 boolean 管理、cookingTime (int) は NullableLong。
     private float xp;
-    private int   cookingTime;
+    private boolean xpPresent = true;
+    private final RecipeDraft.NullableLong cookingTime = new RecipeDraft.NullableLong();
 
     public CookingDraft(Type type) {
         this.type = type;
         this.xp          = type.defaultXp;
-        this.cookingTime = type.defaultTime;
+        this.cookingTime.set(type.defaultTime);
         for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
     }
 
     public Type  getType()         { return type; }
-    public float getXp()           { return xp; }
-    public void  setXp(float v)    { this.xp = v; }
-    public int   getCookingTime()  { return cookingTime; }
-    public void  setCookingTime(int v) { this.cookingTime = Math.max(1, v); }
 
     @Override
     public List<NumericField> numericFields() {
         return List.of(
-            new NumericField("XP",   NumericField.Kind.FLOAT, () -> xp,          v -> setXp((float) v),     0, 100_000),
-            new NumericField("Time", NumericField.Kind.INT,   () -> cookingTime, v -> setCookingTime((int) v), 1, 100_000)
+            new NumericField("XP", NumericField.Kind.FLOAT,
+                () -> xp,
+                v -> { xp = (float) v; xpPresent = true; },
+                0, 100_000,
+                true,
+                () -> xpPresent,
+                () -> { xpPresent = false; xp = 0; }),
+            cookingTime.toField("Time", NumericField.Kind.INT, 1, 100_000)
         );
     }
 
@@ -119,8 +123,9 @@ public class CookingDraft implements RecipeDraft {
         if (out != null && !out.isEmpty()) {
             slots[IDX_OUTPUT] = new IngredientSpec.Item(out.copy());
         }
-        this.xp          = acr.getExperience();
-        this.cookingTime = acr.getCookingTime();
+        this.xp = acr.getExperience();
+        this.xpPresent = true;
+        this.cookingTime.set(acr.getCookingTime());
         return true;
     }
 
@@ -128,11 +133,14 @@ public class CookingDraft implements RecipeDraft {
     public Recipe<?> toRecipeInstance() {
         Ingredient ing = RecipeDraft.toIngredient(slots[IDX_INPUT]);
         ResourceLocation id = new ResourceLocation(Credit.MODID, "draft/" + type.name().toLowerCase());
+        // recipe instance 構築には数値必須。null 化されてたら default 値で代用 (UI 描画用)。
+        float xpV  = xpPresent ? xp : 0f;
+        int   ctV  = (int) (cookingTime.isPresent() ? cookingTime.get() : type.defaultTime);
         return switch (type) {
-            case SMELTING -> new SmeltingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xp, cookingTime);
-            case BLASTING -> new BlastingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xp, cookingTime);
-            case SMOKING  -> new SmokingRecipe(id,  "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xp, cookingTime);
-            case CAMPFIRE -> new CampfireCookingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xp, cookingTime);
+            case SMELTING -> new SmeltingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xpV, ctV);
+            case BLASTING -> new BlastingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xpV, ctV);
+            case SMOKING  -> new SmokingRecipe(id,  "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xpV, ctV);
+            case CAMPFIRE -> new CampfireCookingRecipe(id, "", type.cookCategory, ing, RecipeDraft.toOutputStack(slots[IDX_OUTPUT]), xpV, ctV);
         };
     }
 
@@ -146,10 +154,13 @@ public class CookingDraft implements RecipeDraft {
         String inJs  = RecipeDraft.formatIngredientString(slots[IDX_INPUT]);
         String outJs = RecipeDraft.formatIngredientWithCount(slots[IDX_OUTPUT]);
         if (inJs == null || outJs == null) return null;
+        StringBuilder mods = new StringBuilder();
+        if (xpPresent)              mods.append(".xp(").append(xp).append(")");
+        if (cookingTime.isPresent()) mods.append(".cookingTime(").append(cookingTime.get()).append(")");
         return "    event." + type.kjsMethod + "(\n"
             + "        " + outJs + ",\n"
             + "        " + inJs + "\n"
-            + "    ).xp(" + xp + ").cookingTime(" + cookingTime + ")\n"
+            + "    )" + mods + "\n"
             + "    .id('" + recipeId + "');\n";
     }
 }

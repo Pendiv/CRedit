@@ -48,11 +48,18 @@ public final class CreditConfig {
     public static final ForgeConfigSpec.EnumValue<HistoryMax> HISTORY_MAX;
     public static final ForgeConfigSpec.BooleanValue AUTO_RELOAD_AFTER_PUSH;
 
+    // ─── v3.10 push payload (= preview 過去世代用) ───
+    public static final ForgeConfigSpec.IntValue HISTORY_MAX_PUSH_PAYLOAD_GENERATIONS;
+    public static final ForgeConfigSpec.IntValue HISTORY_MAX_PUSH_PAYLOAD_SIZE_KB;
+
     // ─── v2.2.2 modid prefix omitted commands ───
     public static final ForgeConfigSpec.BooleanValue OMIT_MODID_PREFIX;
 
     // ─── v2.0.9 edit mode → category 切替時にグリッド内容保持するか ───
     public static final ForgeConfigSpec.BooleanValue PRESERVE_EDIT_GRID_ON_SWITCH;
+
+    // ─── v2.1.2 出力ファイル構造の切替 ───
+    public static final ForgeConfigSpec.BooleanValue UNIFIED_EDIT_FILES;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -112,6 +119,15 @@ public final class CreditConfig {
                 "Maximum number of push entries to keep (10/20/30/40/50/100/200/300/UNLIMITED).",
                 "Older entries are dropped when the limit is reached.")
             .defineEnum("historyMax", HistoryMax.N_30);
+        HISTORY_MAX_PUSH_PAYLOAD_GENERATIONS = b.comment(
+                "v3.10: Maximum push payload generations kept under <gameDir>/credit/history/.",
+                "Each push writes one push_<ts>.nbt for preview-of-past-pushes.",
+                "Older files are deleted on each push. 0 = keep none, -1 = unlimited.")
+            .defineInRange("maxPushPayloadGenerations", 20, -1, Integer.MAX_VALUE);
+        HISTORY_MAX_PUSH_PAYLOAD_SIZE_KB = b.comment(
+                "v3.10: Per-push payload size cap (KB). Pushes exceeding this are dropped",
+                "(metadata-only fallback, no past-preview). 0 = no cap.")
+            .defineInRange("maxPushPayloadSizeKb", 1024, 0, Integer.MAX_VALUE);
         b.pop();
         b.push("push");
         AUTO_RELOAD_AFTER_PUSH = b.comment(
@@ -135,6 +151,18 @@ public final class CreditConfig {
                 "to avoid accidentally creating unintended recipes.",
                 "When true, the loaded recipe contents are preserved across category switches.")
             .define("preserveEditGridOnSwitch", false);
+        b.pop();
+
+        // v2.1.2 出力ファイル構造
+        b.push("output");
+        UNIFIED_EDIT_FILES = b.comment(
+                "When true (default), all recipes of a mod go into <modid>/{add,edit,delete}.js",
+                "(unified per mod, current behavior).",
+                "When false, recipes are split by recipe type:",
+                "<modid>/<recipetype_path>/{add,edit,delete}.js",
+                "Toggle does NOT migrate existing files; only future output uses the new layout.",
+                "Import scans recursively so both layouts are accepted as input.")
+            .define("unifiedEditFiles", true);
         b.pop();
 
         SPEC = b.build();

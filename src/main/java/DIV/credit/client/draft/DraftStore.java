@@ -84,12 +84,19 @@ public class DraftStore {
 
     @Nullable
     private RecipeDraft create(IRecipeCategory<?> cat) {
+        return create(cat, this.craftingVariant);
+    }
+
+    /** v3.16-A: instance 経由じゃなく static 経由でも Draft 構築可能に。 preview snapshot 復元等で使う。 */
+    @Nullable
+    public static RecipeDraft create(IRecipeCategory<?> cat, CraftingVariant variant) {
+        if (cat == null) return null;
         RecipeType<?> rt = cat.getRecipeType();
         // 明示的に対応外（情報ページや診断系。レシピではないので編集不可）
         if (EXPLICIT_UNSUPPORTED.containsKey(rt.getUid().toString())) return null;
         if (RecipeTypes.CRAFTING.equals(rt)) {
             CraftingDraft cd = new CraftingDraft();
-            cd.setMode(craftingVariant == CraftingVariant.SHAPED
+            cd.setMode(variant == CraftingVariant.SHAPED
                 ? CraftingDraft.Mode.SHAPED : CraftingDraft.Mode.SHAPELESS);
             return cd;
         }
@@ -113,10 +120,22 @@ public class DraftStore {
         boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
         // DE 判定（category UID = draconicevolution:fusion_crafting）
         boolean isDe = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
+        // AE2 判定（category UID = ae2:inscriber/charger/entropy/item_transformation）
+        boolean isAe2 = DIV.credit.client.draft.ae2.AE2Support.isAe2Category(cat);
+        // Re-Avaritia 判定 (category UID = avaritia:compressor / sculk_craft / nether_craft / end_craft / extreme_smithing)
+        boolean isAvaritia = DIV.credit.client.draft.avaritia.AvaritiaSupport.isAvaritiaCategory(cat);
 
         // DE は最優先（fusion_crafting 専用 draft）
         if (isDe && ModList.get().isLoaded("draconicevolution")) {
             RecipeDraft d = DIV.credit.client.draft.de.DESupport.tryCreate(cat);
+            if (d != null) return d;
+        }
+        if (isAe2 && ModList.get().isLoaded("ae2")) {
+            RecipeDraft d = DIV.credit.client.draft.ae2.AE2Support.tryCreate(cat);
+            if (d != null) return d;
+        }
+        if (isAvaritia && ModList.get().isLoaded("avaritia")) {
+            RecipeDraft d = DIV.credit.client.draft.avaritia.AvaritiaSupport.tryCreate(cat);
             if (d != null) return d;
         }
         // hand-written drafts (GT compressor/assembler, Mek pressurized_reaction) を優先
@@ -143,7 +162,7 @@ public class DraftStore {
         //   - IE システム (現状は IE 本体のみ、addon あれば自動対応)
         //   - Create システム
         String ns = rt.getUid().getNamespace();
-        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate) return null;
+        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate && !isAe2 && !isAvaritia) return null;
         var rt2 = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
         if (rt2 != null) {
             return GenericDraft.tryCreate(cat, rt2.getRecipeManager());
@@ -206,6 +225,12 @@ public class DraftStore {
         // Create defer (今後対応予定だが Tier-A では未対応)
         m.put("create:mechanical_crafting",             UnsupportedReason.DEFERRED);
         m.put("create:sequenced_assembly",              UnsupportedReason.DEFERRED);
+        // AE2: KubeJS 操作不可 / UI ガイドのみ
+        m.put("ae2:condenser",                          UnsupportedReason.NO_KUBEJS);
+        m.put("ae2:attunement",                         UnsupportedReason.VIEWER);
+        m.put("ae2:certus_growth",                      UnsupportedReason.VIEWER);
+        // Re-Avaritia: 9x9 Extreme Crafting Table (tier 4) は v2.1 で対応外
+        m.put("avaritia:extreme_craft",                 UnsupportedReason.DEFERRED);
         EXPLICIT_UNSUPPORTED = java.util.Collections.unmodifiableMap(m);
     }
 
@@ -226,12 +251,14 @@ public class DraftStore {
             || RecipeTypes.STONECUTTING.equals(rt)) return true;
         // v2.0.13: jei:fuel
         if ("jei".equals(rt.getUid().getNamespace()) && "fuel".equals(rt.getUid().getPath())) return true;
-        boolean isGt     = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
-        boolean isMek    = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
-        boolean isIe     = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
-        boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
-        boolean isDe     = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
-        if (isGt || isMek || isIe || isCreate || isDe) return true;
+        boolean isGt       = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
+        boolean isMek      = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
+        boolean isIe       = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
+        boolean isCreate   = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
+        boolean isDe       = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
+        boolean isAe2      = DIV.credit.client.draft.ae2.AE2Support.isAe2Category(cat);
+        boolean isAvaritia = DIV.credit.client.draft.avaritia.AvaritiaSupport.isAvaritiaCategory(cat);
+        if (isGt || isMek || isIe || isCreate || isDe || isAe2 || isAvaritia) return true;
         return "minecraft".equals(rt.getUid().getNamespace());
     }
 

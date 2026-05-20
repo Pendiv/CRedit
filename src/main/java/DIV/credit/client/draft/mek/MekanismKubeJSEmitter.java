@@ -293,17 +293,20 @@ public final class MekanismKubeJSEmitter {
         return k == SlotKind.ITEM_INPUT || k == SlotKind.FLUID_INPUT || k == SlotKind.GAS_INPUT;
     }
 
-    /** Mek KubeJS 値表記：item は単数 'id' / 複数 Item.of('id', N)、fluid は Fluid.of、gas は 'id N'。 */
+    /** Phase-mek-schema: Mek KubeJS 値表記。 全て KubeJS API object 形式 (Item.of / Ingredient.of / Fluid.of / Gas.of) で
+     *  返す。 文字列 'id' で返すと JSON 化時に JsonPrimitive になり、 Mek RecipeSerializer.fromJson が
+     *  「Expected input to be a JsonObject」 で reject する。 */
     @Nullable
     private static String formatValue(IngredientSpec s) {
         if (s.isEmpty()) return null;
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
-            int c = it.stack().getCount();
-            return c <= 1 ? "'" + rl + "'" : "Item.of('" + rl + "', " + c + ")";
+            int c = Math.max(1, it.stack().getCount());
+            return "Item.of('" + rl + "', " + c + ")";
         }
         if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            return "'#" + tg.tagId() + "'";
+            int c = Math.max(1, tg.count());
+            return "Ingredient.of('#" + tg.tagId() + "', " + c + ")";
         }
         if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
             FluidStack fs = fl.stack();
@@ -314,7 +317,7 @@ public final class MekanismKubeJSEmitter {
             return "Fluid.of('#" + ft.tagId() + "', " + ft.amount() + ")";
         }
         if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
-            return "'" + g.gasId() + " " + g.amount() + "'";
+            return "Gas.of('" + g.gasId() + "', " + Math.max(1, g.amount()) + ")";
         }
         return null;
     }

@@ -89,6 +89,18 @@ public final class GTSupport {
     @Nullable
     public static GTRecipe tryBuildEmptyRecipe(ResourceLocation jeiUid, long duration, long eut,
                                                  Map<String, Long> intData, @Nullable String cleanroomName) {
+        return tryBuildRecipeWithSlots(jeiUid, duration, eut, intData, cleanroomName, null, null);
+    }
+
+    /**
+     * Phase-gt-slots: slots 込みで GT recipe 構築。
+     *  preview 経路で GenericDraft.toRecipeInstance() が呼ぶ。 slots/kinds=null なら空 recipe (= 旧 tryBuildEmptyRecipe 挙動)。
+     */
+    @Nullable
+    public static GTRecipe tryBuildRecipeWithSlots(ResourceLocation jeiUid, long duration, long eut,
+                                                    Map<String, Long> intData, @Nullable String cleanroomName,
+                                                    @Nullable DIV.credit.client.draft.IngredientSpec[] slots,
+                                                    @Nullable DIV.credit.client.draft.RecipeDraft.SlotKind[] kinds) {
         try {
             GTRecipeType type = GTRegistries.RECIPE_TYPES.get(jeiUid);
             if (type == null) {
@@ -113,12 +125,79 @@ public final class GTSupport {
                     Credit.LOGGER.warn("[CraftPattern] cleanroom inject failed for {}: {}", cleanroomName, e.toString());
                 }
             }
+            // slots 込み構築 (= preview 真 drawable 用)
+            if (slots != null && kinds != null) {
+                int n = Math.min(slots.length, kinds.length);
+                int itemIn = 0, itemOut = 0, fluidIn = 0, fluidOut = 0;
+                for (int i = 0; i < n; i++) {
+                    var s = slots[i];
+                    var k = kinds[i];
+                    if (s == null || s.isEmpty() || k == null) continue;
+                    try {
+                        switch (k) {
+                            case ITEM_INPUT -> { if (addItemInput(b, s)) itemIn++; }
+                            case ITEM_OUTPUT -> { if (addItemOutput(b, s)) itemOut++; }
+                            case FLUID_INPUT -> { if (addFluidInput(b, s)) fluidIn++; }
+                            case FLUID_OUTPUT -> { if (addFluidOutput(b, s)) fluidOut++; }
+                            default -> {}  // GAS は GT 範囲外
+                        }
+                    } catch (Exception slotEx) {
+                        Credit.LOGGER.warn("[CraftPattern] GT slot[{}] {} apply failed: {}",
+                            i, k, slotEx.getMessage());
+                    }
+                }
+                Credit.LOGGER.info("[CraftPattern] GT tryBuildRecipeWithSlots {}: itemIn={}, itemOut={}, fluidIn={}, fluidOut={}",
+                    jeiUid, itemIn, itemOut, fluidIn, fluidOut);
+            }
             return b.buildRawRecipe();
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GT empty recipe build failed for {}: {}",
+            Credit.LOGGER.warn("[CraftPattern] GT recipe build failed for {}: {}",
                 jeiUid, e.toString());
             return null;
         }
+    }
+
+    private static boolean addItemInput(GTRecipeBuilder b, DIV.credit.client.draft.IngredientSpec s) {
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Item it && !it.stack().isEmpty()) {
+            b.inputItems(it.stack()); return true;
+        }
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Tag tg && tg.tagId() != null) {
+            net.minecraft.tags.TagKey<net.minecraft.world.item.Item> tk =
+                net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, tg.tagId());
+            b.inputItems(tk, Math.max(1, tg.count())); return true;
+        }
+        // Configured (= GT_CATALYST 等) の base 部分を再帰処理
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Configured c) return addItemInput(b, c.base());
+        return false;
+    }
+
+    private static boolean addItemOutput(GTRecipeBuilder b, DIV.credit.client.draft.IngredientSpec s) {
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Item it && !it.stack().isEmpty()) {
+            b.outputItems(it.stack()); return true;
+        }
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Configured c) return addItemOutput(b, c.base());
+        return false;
+    }
+
+    private static boolean addFluidInput(GTRecipeBuilder b, DIV.credit.client.draft.IngredientSpec s) {
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+            b.inputFluids(fl.stack()); return true;
+        }
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.FluidTag ftag && ftag.tagId() != null) {
+            net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> tk =
+                net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.FLUID, ftag.tagId());
+            b.inputFluids(com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient.of(tk, ftag.amount())); return true;
+        }
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Configured c) return addFluidInput(b, c.base());
+        return false;
+    }
+
+    private static boolean addFluidOutput(GTRecipeBuilder b, DIV.credit.client.draft.IngredientSpec s) {
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+            b.outputFluids(fl.stack()); return true;
+        }
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Configured c) return addFluidOutput(b, c.base());
+        return false;
     }
 
     /**

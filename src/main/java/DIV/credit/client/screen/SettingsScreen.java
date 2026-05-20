@@ -35,6 +35,8 @@ public class SettingsScreen extends Screen {
     private boolean omitModidPrefix;
     // v2.0.9
     private boolean preserveEditGrid;
+    // v2.1.2
+    private boolean unifiedEditFiles;
 
     private int persistenceSlotX = -1, persistenceSlotY = -1;
     private int shareSlotX = -1, shareSlotY = -1;
@@ -47,6 +49,7 @@ public class SettingsScreen extends Screen {
     private int autoReloadSX = -1, autoReloadSY = -1;
     private int omitPrefixSX = -1, omitPrefixSY = -1;
     private int preserveGridSX = -1, preserveGridSY = -1;
+    private int unifiedFilesSX = -1, unifiedFilesSY = -1;
     private static final int SLOT_SIZE = 16;
 
     public SettingsScreen(Screen parent) {
@@ -142,6 +145,12 @@ public class SettingsScreen extends Screen {
         this.preserveGridSX = leftX + font.width(pgLabel) + 6;
         this.preserveGridSY = 366;
 
+        // v2.1.2 unified edit files
+        this.unifiedEditFiles = CreditConfig.UNIFIED_EDIT_FILES.get();
+        Component ueLabel = Component.translatable("gui.credit.settings.unified_files");
+        this.unifiedFilesSX = leftX + font.width(ueLabel) + 6;
+        this.unifiedFilesSY = 388;
+
         // ─── 破壊的アクションボタン ───
         int destBtnW = 220;
         int destBtnX = cx - destBtnW / 2;
@@ -149,23 +158,23 @@ public class SettingsScreen extends Screen {
                 Component.translatable("gui.credit.settings.delete_data.label")
                     .withStyle(ChatFormatting.RED),
                 b -> tryDeleteEditData())
-            .bounds(destBtnX, 392, destBtnW, 20)
+            .bounds(destBtnX, 414, destBtnW, 20)
             .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.credit.settings.delete_history.label")
                     .withStyle(ChatFormatting.RED),
                 b -> tryDeleteHistory())
-            .bounds(destBtnX, 416, destBtnW, 20)
+            .bounds(destBtnX, 438, destBtnW, 20)
             .build());
         addRenderableWidget(Button.builder(
                 Component.translatable("gui.credit.settings.reset.label")
                     .withStyle(ChatFormatting.RED),
                 b -> tryResetSettings())
-            .bounds(destBtnX, 440, destBtnW, 20)
+            .bounds(destBtnX, 462, destBtnW, 20)
             .build());
 
         // Save + Cancel
-        int btnY = 466;
+        int btnY = 488;
         addRenderableWidget(Button.builder(Component.literal("Save"), b -> save())
             .bounds(cx - 80, btnY, 70, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
@@ -206,6 +215,7 @@ public class SettingsScreen extends Screen {
         saveBool(CreditConfig.AUTO_RELOAD_AFTER_PUSH, autoReload);
         saveBool(CreditConfig.OMIT_MODID_PREFIX,      omitModidPrefix);
         saveBool(CreditConfig.PRESERVE_EDIT_GRID_ON_SWITCH, preserveEditGrid);
+        saveBool(CreditConfig.UNIFIED_EDIT_FILES, unifiedEditFiles);
         if (historyMax != CreditConfig.HISTORY_MAX.get()) {
             CreditConfig.HISTORY_MAX.set(historyMax);
             CreditConfig.HISTORY_MAX.save();
@@ -275,6 +285,7 @@ public class SettingsScreen extends Screen {
         resetDef(CreditConfig.AUTO_RELOAD_AFTER_PUSH);
         resetDef(CreditConfig.OMIT_MODID_PREFIX);
         resetDef(CreditConfig.PRESERVE_EDIT_GRID_ON_SWITCH);
+        resetDef(CreditConfig.UNIFIED_EDIT_FILES);
         Minecraft.getInstance().setScreen(new SettingsScreen(parent));
         announce(Component.translatable("gui.credit.settings.reset.done")
             .withStyle(ChatFormatting.GREEN));
@@ -307,6 +318,7 @@ public class SettingsScreen extends Screen {
             if (hit(mx, my, autoReloadSX, autoReloadSY))         { autoReload = !autoReload; return true; }
             if (hit(mx, my, omitPrefixSX, omitPrefixSY))         { omitModidPrefix = !omitModidPrefix; return true; }
             if (hit(mx, my, preserveGridSX, preserveGridSY))     { preserveEditGrid = !preserveEditGrid; return true; }
+            if (hit(mx, my, unifiedFilesSX, unifiedFilesSY))     { unifiedEditFiles = !unifiedEditFiles; return true; }
         }
         return super.mouseClicked(mx, my, button);
     }
@@ -388,6 +400,12 @@ public class SettingsScreen extends Screen {
         renderToggleSlot(g, mouseX, mouseY, preserveGridSX, preserveGridSY, preserveEditGrid,
             "gui.credit.settings.preserve_edit_grid.current",
             "gui.credit.settings.preserve_edit_grid.desc", false);
+
+        // v2.1.2 unified edit files
+        drawLabelAt(g, "gui.credit.settings.unified_files", leftX, unifiedFilesSY);
+        renderToggleSlot(g, mouseX, mouseY, unifiedFilesSX, unifiedFilesSY, unifiedEditFiles,
+            "gui.credit.settings.unified_files.current",
+            "gui.credit.settings.unified_files.desc", false);
     }
 
     /** OMIT_MODID_PREFIX: 二値スロット + 次回起動反映の警告 tooltip。 */

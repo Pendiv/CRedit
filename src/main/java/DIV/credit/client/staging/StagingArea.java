@@ -21,20 +21,37 @@ public final class StagingArea {
 
     private StagingArea() {}
 
-    /** 新しい変更を auto-stage (committed=false 状態)。 */
+    /** v3.16-B: 新しい変更を auto-stage (committed=false 状態)。 draftSnapshot は preview 用、 import 由来や DELETE では null。 */
+    public StagedChange stage(OperationKind kind, String modid, String recipeId,
+                              @Nullable String origRecipeId, String codeBody,
+                              @Nullable String jeiCategoryUid,
+                              @Nullable net.minecraft.nbt.CompoundTag draftSnapshot) {
+        StagedChange c = StagedChange.create(kind, modid, recipeId, origRecipeId, codeBody, jeiCategoryUid, draftSnapshot);
+        changes.add(c);
+        Credit.LOGGER.info("[CraftPattern] STAGE {} {} (cat={}, id={}, hasSnap={})",
+            kind, recipeId, jeiCategoryUid, c.id, draftSnapshot != null);
+        return c;
+    }
+
+    /** 旧 signature 互換 (snapshot なし)。 */
     public StagedChange stage(OperationKind kind, String modid, String recipeId,
                               @Nullable String origRecipeId, String codeBody,
                               @Nullable String jeiCategoryUid) {
-        StagedChange c = StagedChange.create(kind, modid, recipeId, origRecipeId, codeBody, jeiCategoryUid);
-        changes.add(c);
-        Credit.LOGGER.info("[CraftPattern] STAGE {} {} (cat={}, id={})", kind, recipeId, jeiCategoryUid, c.id);
-        return c;
+        return stage(kind, modid, recipeId, origRecipeId, codeBody, jeiCategoryUid, null);
     }
 
     /** 旧 signature 互換用 (jeiCategoryUid なし)。 */
     public StagedChange stage(OperationKind kind, String modid, String recipeId,
                               @Nullable String origRecipeId, String codeBody) {
-        return stage(kind, modid, recipeId, origRecipeId, codeBody, null);
+        return stage(kind, modid, recipeId, origRecipeId, codeBody, null, null);
+    }
+
+    /** v2.1.2: 既製の StagedChange (例 createImported 由来) をそのまま積む。 */
+    public StagedChange stage(StagedChange c) {
+        changes.add(c);
+        Credit.LOGGER.info("[CraftPattern] STAGE {} {} (imported={}, id={})",
+            c.kind, c.recipeId, c.imported, c.id);
+        return c;
     }
 
     public List<StagedChange> all() {

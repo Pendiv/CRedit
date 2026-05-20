@@ -296,6 +296,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     }
 
     private static String formatField(RecipeDraft.NumericField field) {
+        // v2.1.3: nullable + isPresent()=false → "null" 表示
+        if (field.nullable() && !field.isPresent().getAsBoolean()) return "null";
         double v = field.getter().getAsDouble();
         if (field.kind() == RecipeDraft.NumericField.Kind.INT) return String.valueOf((long) v);
         if (v == (long) v) return String.valueOf((long) v);
@@ -305,6 +307,25 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private void onFieldChanged(RecipeDraft.NumericField field, String s) {
         if (updatingFieldsFromDraft) return;
         if (s.isBlank()) return;
+
+        // v2.1.3: "null" (case-insensitive) 入力受付
+        if ("null".equalsIgnoreCase(s.trim())) {
+            if (!field.nullable()) {
+                // 拒否: EditBox を旧値に巻き戻す (silent)
+                int idx = currentFields.indexOf(field);
+                if (idx >= 0) {
+                    updatingFieldsFromDraft = true;
+                    try { numericBoxes.get(idx).setValue(formatField(field)); }
+                    finally { updatingFieldsFromDraft = false; }
+                }
+                return;
+            }
+            // 採用: null 化
+            field.clearer().run();
+            recipeArea.rebuild();
+            return;
+        }
+
         try {
             double v = field.kind() == RecipeDraft.NumericField.Kind.INT
                 ? (double) Integer.parseInt(s)
@@ -431,10 +452,23 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     private void doDump() {
         RecipeDraft draft = recipeArea.getDraft();
+        Credit.LOGGER.info("[CraftPattern] doDump entry: draft={}, mode={}, isEdit={}",
+            draft == null ? "null" : draft.getClass().getSimpleName(),
+            recipeArea.getMode(),
+            isEditMode());
         if (draft == null) {
             chat(Component.literal("[CraftPattern] No draft for this category.").withStyle(ChatFormatting.RED));
             return;
         }
+        // diagnostic: print all slot states
+        StringBuilder slotDump = new StringBuilder();
+        for (int i = 0; i < draft.slotCount(); i++) {
+            var s = draft.getSlot(i);
+            slotDump.append("\n  [").append(i).append("] ")
+                .append(draft.slotKind(i).name()).append(" = ")
+                .append(s.isEmpty() ? "EMPTY" : (s.unwrap().getClass().getSimpleName() + " count=" + s.count()));
+        }
+        Credit.LOGGER.info("[CraftPattern] doDump slot states (slotCount={}):{}", draft.slotCount(), slotDump);
         String recipeId = autoRecipeId(draft);
         boolean wasEdit = isEditMode();
         // v2.1.0: ScriptWriter 直接呼出 → StagingArea.stage 経由に変更。
@@ -476,7 +510,27 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             chat(Component.translatable("gui.credit.dump.reload_hint").withStyle(ChatFormatting.GRAY));
         } else {
             String jeiCategoryUid = draft.recipeType().getUid().toString();
-            DIV.credit.client.staging.StagingArea.INSTANCE.stage(opKind, modid, recipeId, origForLog, code, jeiCategoryUid);
+            // Phase-gt-conflict: GT recipe は input 衝突を pre-check して chat WARN (= dump 自体は止めない)
+            try {
+                var instance = draft.toRecipeInstance();
+                if (instance instanceof com.gregtechceu.gtceu.api.recipe.GTRecipe gtr) {
+                    var conflicts = DIV.credit.client.draft.gt.GTConflictChecker.findConflicts(gtr, 3);
+                    if (!conflicts.isEmpty()) {
+                        chat(Component.translatable("gui.credit.gt.conflict.head", conflicts.size())
+                            .withStyle(ChatFormatting.YELLOW));
+                        for (var c : conflicts) {
+                            chat(Component.literal("  - " + c.getId()).withStyle(ChatFormatting.GRAY));
+                        }
+                        chat(Component.translatable("gui.credit.gt.conflict.hint")
+                            .withStyle(ChatFormatting.GRAY));
+                    }
+                }
+            } catch (Throwable ignored) {}  // GT 未ロード環境等
+            // v3.16-B: preview 真 Recipe<?> 復元用に Draft snapshot を同梱
+            net.minecraft.nbt.CompoundTag snap = null;
+            try { snap = DIV.credit.client.draft.DraftPersistence.serializeDraft(draft); }
+            catch (Exception ignored) {}
+            DIV.credit.client.staging.StagingArea.INSTANCE.stage(opKind, modid, recipeId, origForLog, code, jeiCategoryUid, snap);
             DIV.credit.client.staging.StagingPersistence.save();
             chat(Component.translatable("gui.credit.staging.staged",
                 opKind.name(), recipeId).withStyle(ChatFormatting.AQUA));
@@ -522,10 +576,16 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     private String autoRecipeId(RecipeDraft draft) {
         String outPath = draft.outputItemPath();
+        String base;
         if (outPath != null && !outPath.isEmpty()) {
-            return Credit.MODID + ":generated/" + outPath;
+            base = Credit.MODID + ":generated/" + outPath;
+        } else {
+            base = Credit.MODID + ":generated/recipe_" + (System.currentTimeMillis() % 100000);
         }
-        return Credit.MODID + ":generated/recipe_" + (System.currentTimeMillis() % 100000);
+        // v2.1.2-fix-C: 既存 (staging + generated/) と衝突したら _2/_3... を付加。
+        // EDIT 経路では現在編集中の orig id 自身は衝突対象から除外する (再代入は OK)。
+        String excludeSelf = (editModeOrigId != null && !editModeOrigId.isEmpty()) ? editModeOrigId : null;
+        return DIV.credit.client.io.RecipeIdResolver.resolveUnique(base, excludeSelf);
     }
 
     private static void chat(Component msg) {
@@ -595,6 +655,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         }
         // dropdown は最前面（tooltip より下、cursor より下）
         tagBar.renderOverlay(g, mouseX, mouseY);
+
+        // v3.0.0: preview windows を最前面で描画 (= BuilderScreen UI の上に被せる)
+        DIV.credit.client.preview.PreviewWindowManager.INSTANCE.renderAll(g, mouseX, mouseY, partialTick);
     }
 
     private void renderModeToggle(GuiGraphics g, int mouseX, int mouseY) {
@@ -833,6 +896,10 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        // v3.0.0: preview windows が最前面、 hit すれば既存処理に渡さない
+        if (DIV.credit.client.preview.PreviewWindowManager.INSTANCE.mouseClickedAny(mx, my, button)) {
+            return true;
+        }
         if (button == 0) {
             var resultRect = tagBar.getResultSlotRect();
             DIV.credit.Credit.LOGGER.info(
@@ -863,20 +930,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             toggleCraftingMode();
             return true;
         }
-        // v2.0.13: DE tier cycle — recipe area の non-slot 領域クリックで cycle。
-        // 左クリ → 次、Shift+左クリ → 前。
-        // 旧 [Wyvern] toggle button は撤去、DE 本体 JEI 表記の上をクリックする想定。
-        if (button == 0 && recipeArea.isInside(mx, my)) {
-            RecipeDraft drCycle = recipeArea.getDraft();
-            if (drCycle != null && drCycle.canCycleTier()) {
-                if (recipeArea.findSlotIndexAt(mx, my) < 0) {  // slot 上ではない
-                    drCycle.cycleTier(!Screen.hasShiftDown());
-                    recipeArea.rebuild();
-                    playClick();
-                    return true;
-                }
-            }
-        }
+        // v2.1.3: dump/settings/question/heat icon 判定は tier cycle より前に移動。
+        // recipeArea.isInside() が setBounds 領域全体 (dump 等の icon area とも重なる) のため、
+        // canCycleTier=true な draft で icon click が tier cycle に消費されるバグの修正。
         if (button == 0 && dumpX >= 0
             && mx >= dumpX && mx < dumpX + DUMP_W
             && my >= dumpY && my < dumpY + DUMP_H) {
@@ -922,6 +978,20 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
                 }
                 playClick();
                 return true;
+            }
+        }
+        // v2.0.13: DE tier cycle — recipe area の non-slot 領域クリックで cycle。
+        // 左クリ → 次、Shift+左クリ → 前。
+        // 旧 [Wyvern] toggle button は撤去、DE 本体 JEI 表記の上をクリックする想定。
+        if (button == 0 && recipeArea.isInside(mx, my)) {
+            RecipeDraft drCycle = recipeArea.getDraft();
+            if (drCycle != null && drCycle.canCycleTier()) {
+                if (recipeArea.findSlotIndexAt(mx, my) < 0) {  // slot 上ではない
+                    drCycle.cycleTier(!Screen.hasShiftDown());
+                    recipeArea.rebuild();
+                    playClick();
+                    return true;
+                }
             }
         }
 
@@ -1160,6 +1230,12 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // v3.0.0: ESC 2 段 (1st: preview 全消し、 2nd: BuilderScreen close)。
+        // GLFW_KEY_ESCAPE = 256。 preview window が無ければスルー。
+        if (keyCode == 256 && DIV.credit.client.preview.PreviewWindowManager.INSTANCE.hasWindows()) {
+            DIV.credit.client.preview.PreviewWindowManager.INSTANCE.clearAll();
+            return true;
+        }
         // Ctrl+Z: undo / Ctrl+Shift+Z: redo / Ctrl+Y: redo (両対応)
         // GLFW: Z=90, Y=89, MOD_CONTROL=2, MOD_SHIFT=1
         if ((modifiers & 2) != 0) {
@@ -1234,6 +1310,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     @Override
     public void removed() {
         super.removed();
+        // v3.0.0: BuilderScreen lifecycle と preview window lifecycle を同期
+        DIV.credit.client.preview.PreviewWindowManager.INSTANCE.clearAll();
         var mode = DIV.credit.CreditConfig.EDIT_PERSISTENCE.get();
         switch (mode) {
             case MIN -> DRAFT_STORE.clear();
@@ -1241,4 +1319,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             case NORMAL -> {} // keep in-memory until game exits
         }
     }
+
+    // v3.0.0: preview command 等から呼ぶ getter 公開。
+    public @org.jetbrains.annotations.Nullable IRecipeCategory<?> getCurrentCategory() { return currentCategory; }
+    public static @org.jetbrains.annotations.Nullable IRecipeCategory<?> getLastCategory() { return lastCategory; }
 }

@@ -100,12 +100,22 @@ public final class DraftPersistence {
         try {
             ListTag slots = t.getList("slots", Tag.TAG_COMPOUND);
             int n = Math.min(slots.size(), d.slotCount());
+            int parsedNull = 0, rejected = 0, setOk = 0;
             for (int i = 0; i < n; i++) {
                 IngredientSpec spec = parseSpec(slots.getCompound(i));
-                if (spec != null && d.acceptsAt(i, spec)) {
-                    d.setSlot(i, spec);
+                if (spec == null) { parsedNull++; continue; }
+                if (!d.acceptsAt(i, spec)) {
+                    rejected++;
+                    Credit.LOGGER.info("[CraftPattern] applyTo: slot[{}] acceptsAt=false (spec={}, type={})",
+                        i, spec.getClass().getSimpleName(),
+                        slots.getCompound(i).getString("type"));
+                    continue;
                 }
+                d.setSlot(i, spec);
+                setOk++;
             }
+            Credit.LOGGER.info("[CraftPattern] applyTo: draft={}, slots nbt={}, draftSlots={}, setOk={}, parsedNull={}, rejected={}",
+                d.getClass().getSimpleName(), slots.size(), d.slotCount(), setOk, parsedNull, rejected);
             ListTag fields = t.getList("fields", Tag.TAG_COMPOUND);
             Map<String, RecipeDraft.NumericField> byLabel = new HashMap<>();
             for (var f : d.numericFields()) byLabel.put(f.label(), f);

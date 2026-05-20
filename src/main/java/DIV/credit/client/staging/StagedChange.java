@@ -22,10 +22,16 @@ public final class StagedChange {
     public boolean            committed;      // /credit commit で承認されたか
     /** v2.0.7: 元 JEI カテゴリ UID (例 gtceu:primitive_blast_furnace)。GT 等の ID prefix 解決用。 */
     @Nullable public final String jeiCategoryUid;
+    /** v2.1.2: /credit import 由来かどうか。true なら imported_&lt;add|edit|delete&gt;.js に書く。 */
+    public final boolean imported;
+    /** v3.16-B: BuilderScreen dump 時の Draft snapshot (= DraftPersistence.serializeDraft の戻り)。
+     *  preview で真の Recipe<?> 復元に使う。 import 由来や旧 stage では null。 */
+    @Nullable public final CompoundTag draftSnapshot;
 
     public StagedChange(String id, OperationKind kind, String modid, String recipeId,
                         @Nullable String origRecipeId, String codeBody, long timestamp,
-                        boolean committed, @Nullable String jeiCategoryUid) {
+                        boolean committed, @Nullable String jeiCategoryUid, boolean imported,
+                        @Nullable CompoundTag draftSnapshot) {
         this.id             = id;
         this.kind           = kind;
         this.modid          = modid;
@@ -35,13 +41,32 @@ public final class StagedChange {
         this.timestamp      = timestamp;
         this.committed      = committed;
         this.jeiCategoryUid = jeiCategoryUid;
+        this.imported       = imported;
+        this.draftSnapshot  = draftSnapshot;
     }
 
     public static StagedChange create(OperationKind kind, String modid, String recipeId,
                                       @Nullable String origRecipeId, String codeBody,
-                                      @Nullable String jeiCategoryUid) {
+                                      @Nullable String jeiCategoryUid,
+                                      @Nullable CompoundTag draftSnapshot) {
         return new StagedChange(UUID.randomUUID().toString(), kind, modid, recipeId,
-            origRecipeId, codeBody, System.currentTimeMillis(), false, jeiCategoryUid);
+            origRecipeId, codeBody, System.currentTimeMillis(), false, jeiCategoryUid, false,
+            draftSnapshot);
+    }
+
+    /** v3.16-B 互換: snapshot 無しで作る (DELETE 等)。 */
+    public static StagedChange create(OperationKind kind, String modid, String recipeId,
+                                      @Nullable String origRecipeId, String codeBody,
+                                      @Nullable String jeiCategoryUid) {
+        return create(kind, modid, recipeId, origRecipeId, codeBody, jeiCategoryUid, null);
+    }
+
+    /** v2.1.2: /credit import 経由の staged change 生成。 import 由来は snapshot 無し。 */
+    public static StagedChange createImported(OperationKind kind, String modid, String recipeId,
+                                              @Nullable String origRecipeId, String codeBody,
+                                              @Nullable String jeiCategoryUid) {
+        return new StagedChange(UUID.randomUUID().toString(), kind, modid, recipeId,
+            origRecipeId, codeBody, System.currentTimeMillis(), false, jeiCategoryUid, true, null);
     }
 
     public CompoundTag toNbt() {
@@ -55,6 +80,8 @@ public final class StagedChange {
         t.putLong("ts",          timestamp);
         t.putBoolean("committed", committed);
         if (jeiCategoryUid != null) t.putString("jeiCat", jeiCategoryUid);
+        if (imported) t.putBoolean("imported", true);
+        if (draftSnapshot != null) t.put("draftSnap", draftSnapshot);
         return t;
     }
 
@@ -70,7 +97,9 @@ public final class StagedChange {
                 t.getString("code"),
                 t.getLong("ts"),
                 t.getBoolean("committed"),
-                t.contains("jeiCat") ? t.getString("jeiCat") : null
+                t.contains("jeiCat") ? t.getString("jeiCat") : null,
+                t.contains("imported") && t.getBoolean("imported"),
+                t.contains("draftSnap") ? t.getCompound("draftSnap") : null
             );
         } catch (Exception e) {
             return null;

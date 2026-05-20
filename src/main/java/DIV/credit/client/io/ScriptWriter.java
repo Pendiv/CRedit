@@ -88,24 +88,44 @@ public final class ScriptWriter {
     public static DumpResult dumpAdd(RecipeDraft draft, String recipeId) {
         String code = buildAddCode(draft, recipeId);
         if (code == null) return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
-        return writeOp(OperationKind.ADD, draft.recipeType().getUid().getNamespace(), code);
+        return writeOp(OperationKind.ADD, draft.recipeType().getUid().getNamespace(), code, false,
+            draft.recipeType().getUid().toString());
     }
 
     public static DumpResult dumpEdit(RecipeDraft draft, String origRecipeId, String newRecipeId) {
         String code = buildEditCode(draft, origRecipeId, newRecipeId);
         if (code == null) return new DumpResult.Failure("Draft is empty (need at least output + relevant inputs)");
-        return writeOp(OperationKind.EDIT, editModid(draft, origRecipeId), code);
+        return writeOp(OperationKind.EDIT, editModid(draft, origRecipeId), code, false,
+            draft.recipeType().getUid().toString());
     }
 
     public static DumpResult dumpDelete(String recipeId) {
         ResourceLocation rl = parseSafe(recipeId);
         if (rl == null) return new DumpResult.Failure("Invalid recipe id: " + recipeId);
-        return writeOp(OperationKind.DELETE, rl.getNamespace(), buildDeleteCode(recipeId));
+        return writeOp(OperationKind.DELETE, rl.getNamespace(), buildDeleteCode(recipeId), false, null);
     }
 
     /** push 経路から呼ばれる: staged code body を直接書き込み。 */
+    public static DumpResult writeStagedCode(OperationKind op, String modid, String code, @Nullable String recipeTypeUid) {
+        return writeOp(op, modid, code, false, recipeTypeUid);
+    }
+
+    /** 旧 signature 互換 (recipetype 不明)。 */
     public static DumpResult writeStagedCode(OperationKind op, String modid, String code) {
-        return writeOp(op, modid, code);
+        return writeOp(op, modid, code, false, null);
+    }
+
+    /**
+     * v2.1.2: /credit import 由来の staged change を書き込む。
+     * 出力先は &lt;dump_root&gt;/generated/&lt;modid&gt;[/&lt;recipetype&gt;]/imported_&lt;add|edit|delete&gt;.js。
+     */
+    public static DumpResult writeImportedCode(OperationKind op, String modid, String code, @Nullable String recipeTypeUid) {
+        return writeOp(op, modid, code, true, recipeTypeUid);
+    }
+
+    /** 旧 signature 互換 (recipetype 不明)。 */
+    public static DumpResult writeImportedCode(OperationKind op, String modid, String code) {
+        return writeOp(op, modid, code, true, null);
     }
 
     @Nullable
@@ -113,34 +133,60 @@ public final class ScriptWriter {
         try { return new ResourceLocation(s); } catch (Exception e) { return null; }
     }
 
-    private static DumpResult writeOp(OperationKind op, String modid, String code) {
+    private static DumpResult writeOp(OperationKind op, String modid, String code, boolean imported, @Nullable String recipeTypeUid) {
         String root = DIV.credit.CreditConfig.DUMP_ROOT.get();
         if (root == null || root.isBlank()) root = "kubejs/server_scripts";
         if (root.endsWith("/") || root.endsWith("\\")) root = root.substring(0, root.length() - 1);
+        String fileName = (imported ? "imported_" : "") + op.fileName + ".js";
+
+        // v2.1.2: UNIFIED_EDIT_FILES=false なら <modid>/<recipetype_path>/ にネスト
+        // recipetype 不明時 (null) は UNIFIED 相当の path に fallback
+        boolean unified = true;
+        try { unified = DIV.credit.CreditConfig.UNIFIED_EDIT_FILES.get(); }
+        catch (Exception ignored) { /* config 未読込時 = 起動序盤 = unified */ }
+        String subPath;
+        if (!unified && recipeTypeUid != null) {
+            ResourceLocation typeRl = parseSafe(recipeTypeUid);
+            String typePath = (typeRl != null && !typeRl.getPath().isBlank()) ? typeRl.getPath() : null;
+            subPath = typePath != null ? (modid + "/" + sanitizePathSegment(typePath)) : modid;
+        } else {
+            subPath = modid;
+        }
+
         Path target = Minecraft.getInstance().gameDirectory.toPath()
-            .resolve(root + "/generated/" + modid + "/" + op.fileName + ".js");
+            .resolve(root + "/generated/" + subPath + "/" + fileName);
         try {
             Files.createDirectories(target.getParent());
             if (!Files.exists(target)) {
-                writeNewFile(target, op, modid, code);
+                writeNewFile(target, op, modid, code, imported);
                 return new DumpResult.Success(target);
             }
-            return appendIntoExisting(target, op, modid, code);
+            return appendIntoExisting(target, op, modid, code, imported);
         } catch (IOException e) {
             Credit.LOGGER.error("[CraftPattern] {} write IO error", op, e);
             return new DumpResult.Failure("IO error: " + e.getMessage());
         }
     }
 
-    private static void writeNewFile(Path target, OperationKind op, String modid, String code) throws IOException {
+    /** path segment として安全な文字だけにする (slash 等は _ に置換)。 */
+    private static String sanitizePathSegment(String s) {
+        return s.replaceAll("[^a-zA-Z0-9_.-]", "_");
+    }
+
+    private static void writeNewFile(Path target, OperationKind op, String modid, String code, boolean imported) throws IOException {
         String now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        String banner = imported
+            ? "// Source: /credit import (imported from another credit-generated .js)\n"
+              + "// To bulk-disable: rename this file or remove the imported_ prefix file.\n"
+            : "";
         String header =
             "// =====================================================\n" +
             "// Generated by /craftpattern (credit MOD)\n" +
             "// FORMAT: KubeJS (https://kubejs.com/)\n" +
-            "// Operation: " + op.name() + "\n" +
+            "// Operation: " + op.name() + (imported ? " (IMPORTED)" : "") + "\n" +
             "// MOD: " + modid + "\n" +
             "// First created: " + now + "\n" +
+            banner +
             "// Place this file under kubejs/server_scripts/ to take effect.\n" +
             "// Run /reload (or /kubejs reload server_scripts) to apply.\n" +
             "// =====================================================\n\n" +
@@ -151,7 +197,7 @@ public final class ScriptWriter {
         Files.writeString(target, header + code + footer);
     }
 
-    private static DumpResult appendIntoExisting(Path target, OperationKind op, String modid, String code) throws IOException {
+    private static DumpResult appendIntoExisting(Path target, OperationKind op, String modid, String code, boolean imported) throws IOException {
         String content = Files.readString(target);
 
         Integer insertAt = findMarkerInsertionPoint(content);
@@ -169,7 +215,7 @@ public final class ScriptWriter {
         }
 
         Path numbered = nextNumberedFile(target);
-        writeNewFile(numbered, op, modid, code);
+        writeNewFile(numbered, op, modid, code, imported);
         return new DumpResult.Fallback(numbered, "no marker and no `});` found");
     }
 
