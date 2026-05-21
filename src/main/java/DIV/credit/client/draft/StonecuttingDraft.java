@@ -60,6 +60,24 @@ public class StonecuttingDraft implements RecipeDraft {
         return "generated/stonecutting.js";
     }
 
+    /**
+     * v3.0.1: 同 input から複数 result を作れる stonecutting も output-only id だと衝突する。
+     * {@code stonecutting/<input>_<output>(+_<count> if !=1)} で一意化。
+     * 例: stone -> smooth_stone → {@code stonecutting/stone_smooth_stone}
+     *     stone -> 4x stone_bricks → {@code stonecutting/stone_stone_bricks_4}
+     */
+    @Override
+    public String autoIdPath() {
+        String inPath  = RecipeDraft.ingredientIdPath(slots[IDX_INPUT]);
+        String outPath = outputItemPath();
+        if (inPath == null || outPath == null) return outPath;
+        StringBuilder sb = new StringBuilder();
+        sb.append("stonecutting/").append(inPath).append('_').append(outPath);
+        int outCount = slots[IDX_OUTPUT] == null ? 0 : slots[IDX_OUTPUT].count();
+        if (outCount > 1) sb.append('_').append(outCount);
+        return sb.toString();
+    }
+
     @Override
     public String emit(String recipeId) {
         String inJs  = RecipeDraft.formatIngredientString(slots[IDX_INPUT]);

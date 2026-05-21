@@ -7,6 +7,8 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
+import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -90,6 +92,40 @@ public class GTAssemblerDraft implements RecipeDraft {
             duration.toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
             EUt.toField("EUt",          NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
+    }
+
+    /**
+     * v3.0.1: GenericDraft.readSpecFromView を使って slot view を反映。
+     * SLOT_COUNT (= 11) は JEI views と同数想定 (0..8 = item input, 9 = fluid input, 10 = item output)。
+     */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        try {
+            List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
+            int n = Math.min(views.size(), SLOT_COUNT);
+            int loaded = 0;
+            for (int i = 0; i < n; i++) {
+                var spec = DIV.credit.client.draft.GenericDraft.readSpecFromView(views.get(i));
+                if (!spec.isEmpty()) {
+                    slots[i] = spec;
+                    loaded++;
+                }
+            }
+            packItemInputs();
+            Object recipe = layout.getRecipe();
+            if (recipe instanceof Recipe<?> mcr) {
+                var meta = GTSupport.probeMetadata(mcr, jeiType.getUid());
+                if (meta.duration > 0) duration.set(meta.duration);
+                if (meta.eut > 0)      EUt.set(meta.eut);
+            }
+            Credit.LOGGER.info("[CraftPattern] GTAssemblerDraft.loadFromRecipe {} → {}/{} slots",
+                jeiType.getUid(), loaded, n);
+            return loaded > 0;
+        } catch (Exception e) {
+            Credit.LOGGER.warn("[CraftPattern] GTAssemblerDraft.loadFromRecipe failed for {}: {}",
+                jeiType.getUid(), e.toString());
+            return false;
+        }
     }
 
     @Override

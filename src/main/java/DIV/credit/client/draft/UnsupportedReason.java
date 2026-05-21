@@ -18,7 +18,9 @@ public enum UnsupportedReason {
     /** 構造が複雑で UI 編集が現状未実装。 */
     COMPLEX,
     /** 拡張形式で対応難 / 将来対応予定。 */
-    DEFERRED;
+    DEFERRED,
+    /** 例外的なレシピ構造 (potion brewing / compostable / fuel 等)。 vanilla KubeJS 標準 API では安定して扱えない。 */
+    IRREGULAR;
 
     public String translationKey() {
         return "gui.credit.unsupported." + name().toLowerCase();

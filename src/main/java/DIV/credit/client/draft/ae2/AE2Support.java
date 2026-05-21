@@ -13,9 +13,10 @@ import org.jetbrains.annotations.Nullable;
  * <ul>
  *   <li>ae2:inscriber              → InscriberDraft</li>
  *   <li>ae2:charger                → ChargerDraft</li>
- *   <li>ae2:entropy                → EntropyDraft (簡略版)</li>
  *   <li>ae2:item_transformation    → TransformDraft (★ RecipeType UID は ae2:transform)</li>
  * </ul>
+ * <p>v3.0.1: ae2:entropy は状態 transition (= 通常 ingredient 構造と異なる) のため IRREGULAR で
+ * unsupported に。 EntropyDraft 削除済。 DraftStore.EXPLICIT_UNSUPPORTED で扱う。
  * <p>ae2:matter_cannon は JEI 非登録、credit 対象外。
  */
 public final class AE2Support {
@@ -31,7 +32,6 @@ public final class AE2Support {
         String path = rt.getUid().getPath();
         return "inscriber".equals(path)
             || "charger".equals(path)
-            || "entropy".equals(path)
             || "item_transformation".equals(path);
     }
 
@@ -44,7 +44,6 @@ public final class AE2Support {
         return switch (path) {
             case "inscriber"           -> InscriberDraft.tryCreate(cat, rt.getRecipeManager());
             case "charger"             -> ChargerDraft.tryCreate(cat, rt.getRecipeManager());
-            case "entropy"             -> EntropyDraft.tryCreate(cat, rt.getRecipeManager());
             case "item_transformation" -> TransformDraft.tryCreate(cat, rt.getRecipeManager());
             default -> null;
         };

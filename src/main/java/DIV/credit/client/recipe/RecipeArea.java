@@ -75,6 +75,31 @@ public class RecipeArea {
         return currentMode;
     }
 
+    /**
+     * v3.0.1: 現在表示中の drawable の元 recipe に NBT 持ち ItemStack が含まれるか。
+     * GT Assembly Line のデータスティック等、 編集 UI で再現不能な NBT を含むレシピを検知。
+     * <p>判定は drawable.getRecipeSlotsView().getSlotViews() の各 ITypedIngredient を walk して、
+     * ItemStack で {@code hasTag()} かつ output_slot ではないものを 1 つでも見つけたら true。
+     * (output の NBT は通常 result 専用で再現不能ではないため除外。)
+     */
+    public boolean currentRecipeHasExceptionalNbt() {
+        if (drawable == null) return false;
+        try {
+            var views = drawable.getRecipeSlotsView().getSlotViews();
+            for (var v : views) {
+                if (v.getRole() == mezz.jei.api.recipe.RecipeIngredientRole.OUTPUT) continue;
+                var disp = v.getDisplayedIngredient();
+                if (disp.isEmpty()) continue;
+                Object ing = disp.get().getIngredient();
+                if (ing instanceof net.minecraft.world.item.ItemStack stack
+                    && !stack.isEmpty() && stack.hasTag()) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
     public void rebuild() {
         rebuildDrawable();
     }

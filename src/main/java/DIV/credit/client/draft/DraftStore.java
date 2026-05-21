@@ -105,10 +105,8 @@ public class DraftStore {
         if (RecipeTypes.SMOKING.equals(rt))          return new CookingDraft(CookingDraft.Type.SMOKING);
         if (RecipeTypes.CAMPFIRE_COOKING.equals(rt)) return new CookingDraft(CookingDraft.Type.CAMPFIRE);
         if (RecipeTypes.STONECUTTING.equals(rt))     return new StonecuttingDraft();
-        // v2.0.13: jei:fuel カテゴリは FuelDraft で対応 (input item + burnTime numeric)
-        if ("jei".equals(rt.getUid().getNamespace()) && "fuel".equals(rt.getUid().getPath())) {
-            return new FuelDraft();
-        }
+        // v3.0.1: FuelDraft 削除。 `event.fuel(...)` は KubeJS 標準 API に存在せず emit が bogus だった。
+        //   minecraft:fuel カテゴリは EXPLICIT_UNSUPPORTED で IRREGULAR 扱い。
 
         // GT システム判定（modId 不問。recipe class が GTRecipe 派生）
         boolean isGt  = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
@@ -161,8 +159,11 @@ public class DraftStore {
         //   - Mek システム (Mek extension 含む: EvolvedMekanism 等)
         //   - IE システム (現状は IE 本体のみ、addon あれば自動対応)
         //   - Create システム
+        boolean isThermal = DIV.credit.client.draft.thermal.ThermalSupport.isThermalCategory(cat);
+        boolean isIf      = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat);
         String ns = rt.getUid().getNamespace();
-        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate && !isAe2 && !isAvaritia) return null;
+        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate && !isAe2 && !isAvaritia
+            && !isThermal && !isIf) return null;
         var rt2 = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
         if (rt2 != null) {
             return GenericDraft.tryCreate(cat, rt2.getRecipeManager());
@@ -183,13 +184,11 @@ public class DraftStore {
         m.put("gtceu:ore_processing_diagram",           UnsupportedReason.VIEWER);
         m.put("gtceu:programmed_circuit",               UnsupportedReason.VIEWER);
         m.put("ldlib:test_category",                    UnsupportedReason.INTERNAL);
-        // v2.0.12: タグ / 情報表示専用 JEI page (recipe ではないので編集不可)
-        m.put("jei:information",                        UnsupportedReason.VIEWER);  // JEI native info page
-        m.put("jei:compostable",                        UnsupportedReason.VIEWER);  // コンポスター (KubeJS 直接 emit 不可)
-        m.put("compostable",                            UnsupportedReason.VIEWER);  // alias (UID 短縮)
-        m.put("jei:anvil",                              UnsupportedReason.VIEWER);  // 金床 (動的、編集不能)
-        m.put("jei:brewing",                            UnsupportedReason.VIEWER);  // 醸造 (potion 動的、KubeJS 特殊 API)
-        // v2.0.13: tag 内容表示 (編集不可)
+        // v3.0.1: JEI category UID は `minecraft:` namespace (`jei:` ではない)。 ログで確認済。
+        //   旧 `jei:` key は dead だったため map に hit せず supported 扱いになっていた。
+        // 情報表示専用 (recipe ではない)
+        m.put("minecraft:information",                  UnsupportedReason.VIEWER);  // JEI native info page
+        m.put("minecraft:anvil",                        UnsupportedReason.VIEWER);  // 金床 (動的、編集不能)
         m.put("minecraft:tag_recipes/block",            UnsupportedReason.VIEWER);
         m.put("minecraft:tag_recipes/item",             UnsupportedReason.VIEWER);
         m.put("minecraft:tag_recipes/fluid",            UnsupportedReason.VIEWER);
@@ -198,7 +197,16 @@ public class DraftStore {
         m.put("minecraft:beacon",                       UnsupportedReason.VIEWER);
         m.put("minecraft:beacon_payment",               UnsupportedReason.VIEWER);
         m.put("minecraft:repair",                       UnsupportedReason.VIEWER);
-        // ★ jei:fuel は v2.0.13 で FuelDraft 対応 → unsupported から削除
+        // v3.0.1: 例外的レシピ構造 (potion brewing / compostable / fuel / smithing)
+        //   vanilla KubeJS 標準 API では安定して扱えない (= IRREGULAR)。
+        //   - brewing: vanilla brewing stand は hardcoded、 standard event 不在 (addon 必要)
+        //   - compostable: 専用 API (= setCompostable) は存在するが通常 recipe event ではない、 実装コスト高で未対応
+        //   - fuel: `event.fuel(...)` は存在せず、 burnTime 改変は ItemEvents.modification (startup) 経由 → scope 外
+        //   - smithing: 標準 recipe event が限定的 (trim 系は別 schema)
+        m.put("minecraft:brewing",                      UnsupportedReason.IRREGULAR);
+        m.put("minecraft:compostable",                  UnsupportedReason.IRREGULAR);
+        m.put("minecraft:fuel",                         UnsupportedReason.IRREGULAR);
+        m.put("minecraft:smithing",                     UnsupportedReason.IRREGULAR);
         // Mek 系で KubeJS schema が存在しないため編集しても dump 不能
         m.put("mekanism:sps_casing",                    UnsupportedReason.NO_KUBEJS);
         m.put("mekanism:boiler_casing",                 UnsupportedReason.NO_KUBEJS);
@@ -229,6 +237,28 @@ public class DraftStore {
         m.put("ae2:condenser",                          UnsupportedReason.NO_KUBEJS);
         m.put("ae2:attunement",                         UnsupportedReason.VIEWER);
         m.put("ae2:certus_growth",                      UnsupportedReason.VIEWER);
+        // v3.0.1: entropy は状態 transition (water→ice 等) で通常 ingredient 形式と異なる
+        m.put("ae2:entropy",                            UnsupportedReason.IRREGULAR);
+        // v3.1.1: Thermal Series 情報ページ系 (= catalyst boost / fuel multiplier / device mapping)
+        m.put("thermal:pulverizer_catalyst",            UnsupportedReason.IRREGULAR);
+        m.put("thermal:smelter_catalyst",               UnsupportedReason.IRREGULAR);
+        m.put("thermal:insolator_catalyst",             UnsupportedReason.IRREGULAR);
+        m.put("thermal:stirling_fuel",                  UnsupportedReason.VIEWER);
+        m.put("thermal:compression_fuel",               UnsupportedReason.VIEWER);
+        m.put("thermal:magmatic_fuel",                  UnsupportedReason.VIEWER);
+        m.put("thermal:numismatic_fuel",                UnsupportedReason.VIEWER);
+        m.put("thermal:lapidary_fuel",                  UnsupportedReason.VIEWER);
+        m.put("thermal:disenchantment_fuel",            UnsupportedReason.VIEWER);
+        m.put("thermal:gourmand_fuel",                  UnsupportedReason.VIEWER);
+        m.put("thermal:hive_extractor",                 UnsupportedReason.VIEWER);
+        m.put("thermal:tree_extractor",                 UnsupportedReason.VIEWER);
+        m.put("thermal:tree_extractor_boost",           UnsupportedReason.VIEWER);
+        m.put("thermal:fisher_boost",                   UnsupportedReason.VIEWER);
+        m.put("thermal:rock_gen",                       UnsupportedReason.VIEWER);
+        m.put("thermal:potion_diffuser_boost",          UnsupportedReason.VIEWER);
+        // v3.1.1: Industrial Foregoing 動的 recipe (= entity/biome whitelist + rarity weight)
+        m.put("industrialforegoing:laser_drill_fluid",  UnsupportedReason.IRREGULAR);
+        m.put("industrialforegoing:laser_drill_ore",    UnsupportedReason.IRREGULAR);
         // Re-Avaritia: 9x9 Extreme Crafting Table (tier 4) は v2.1 で対応外
         m.put("avaritia:extreme_craft",                 UnsupportedReason.DEFERRED);
         EXPLICIT_UNSUPPORTED = java.util.Collections.unmodifiableMap(m);
@@ -249,8 +279,6 @@ public class DraftStore {
             || RecipeTypes.SMOKING.equals(rt)
             || RecipeTypes.CAMPFIRE_COOKING.equals(rt)
             || RecipeTypes.STONECUTTING.equals(rt)) return true;
-        // v2.0.13: jei:fuel
-        if ("jei".equals(rt.getUid().getNamespace()) && "fuel".equals(rt.getUid().getPath())) return true;
         boolean isGt       = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
         boolean isMek      = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
         boolean isIe       = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
@@ -258,7 +286,9 @@ public class DraftStore {
         boolean isDe       = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
         boolean isAe2      = DIV.credit.client.draft.ae2.AE2Support.isAe2Category(cat);
         boolean isAvaritia = DIV.credit.client.draft.avaritia.AvaritiaSupport.isAvaritiaCategory(cat);
-        if (isGt || isMek || isIe || isCreate || isDe || isAe2 || isAvaritia) return true;
+        boolean isThermal  = DIV.credit.client.draft.thermal.ThermalSupport.isThermalCategory(cat);
+        boolean isIf       = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat);
+        if (isGt || isMek || isIe || isCreate || isDe || isAe2 || isAvaritia || isThermal || isIf) return true;
         return "minecraft".equals(rt.getUid().getNamespace());
     }
 

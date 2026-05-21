@@ -25,11 +25,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * v3.13-C: push 時点の origRecipe を簡易 NBT で snapshot 保存。
+ * v3.13-C: push 時点の origRecipe を NBT で snapshot 保存。
  *  push 後 (= /reload で event.remove が消した) でも before 表示できるよう、 payload に同梱。
  *
  *  対応 kind: "smelting" / "blasting" / "smoking" / "campfire" / "stonecutting" / "shaped" / "shapeless" / "other"
- *  "other" (= mod recipe 等) は最低限 id だけ保存、 復元は null (= Screen 側 placeholder)。
+ * <p>v3.2.1: 全 mod recipe 対応のため {@link #serializerId} + {@link #networkBytes} を追加 (= 任意)。
+ *  RecipeSerializer.toNetwork/fromNetwork で arbitrary Recipe&lt;?&gt; を bytes 化、 復元時 fromNetwork で再構築。
+ *  "other" kind でも bytes あれば真の Recipe&lt;?&gt; 復元可能 (= Thermal/IE/Mek/Create/IF 等)。
  */
 public record OrigRecipeSnapshot(
     String kind,
@@ -39,7 +41,9 @@ public record OrigRecipeSnapshot(
     int width,
     int height,
     int cookingTime,
-    float xp
+    float xp,
+    @Nullable String serializerId,
+    @Nullable byte[] networkBytes
 ) {
 
     /** push 時、 現行 RecipeManager から lookup した Recipe<?> を snapshot に。 */
@@ -59,12 +63,33 @@ public record OrigRecipeSnapshot(
             }
         } catch (Exception ignored) {}
 
+        // v3.2.1: 全 recipe について serializer 経由で network bytes を捕捉 (= mod recipe 復元の主経路)。
+        String serializerId = null;
+        byte[] networkBytes = null;
+        try {
+            var ser = r.getSerializer();
+            if (ser != null) {
+                ResourceLocation sid = net.minecraftforge.registries.ForgeRegistries.RECIPE_SERIALIZERS.getKey(ser);
+                if (sid != null) {
+                    serializerId = sid.toString();
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    var rawSer = (net.minecraft.world.item.crafting.RecipeSerializer) ser;
+                    var buf = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+                    rawSer.toNetwork(buf, r);
+                    networkBytes = new byte[buf.writerIndex()];
+                    buf.getBytes(0, networkBytes);
+                }
+            }
+        } catch (Exception e) {
+            Credit.LOGGER.debug("[CraftPattern] OrigRecipeSnapshot.fromRecipe: toNetwork failed for {}: {}", id, e.toString());
+        }
+
         if (r instanceof ShapedRecipe sr) {
             return new OrigRecipeSnapshot("shaped", id, ins, out,
-                sr.getWidth(), sr.getHeight(), 0, 0f);
+                sr.getWidth(), sr.getHeight(), 0, 0f, serializerId, networkBytes);
         }
         if (r instanceof ShapelessRecipe) {
-            return new OrigRecipeSnapshot("shapeless", id, ins, out, 0, 0, 0, 0f);
+            return new OrigRecipeSnapshot("shapeless", id, ins, out, 0, 0, 0, 0f, serializerId, networkBytes);
         }
         if (r instanceof AbstractCookingRecipe acr) {
             String k = (acr instanceof SmeltingRecipe) ? "smelting"
@@ -73,21 +98,36 @@ public record OrigRecipeSnapshot(
                 : (acr instanceof CampfireCookingRecipe) ? "campfire"
                 : "smelting";
             return new OrigRecipeSnapshot(k, id, ins, out, 0, 0,
-                acr.getCookingTime(), acr.getExperience());
+                acr.getCookingTime(), acr.getExperience(), serializerId, networkBytes);
         }
         if (r instanceof StonecutterRecipe) {
-            return new OrigRecipeSnapshot("stonecutting", id, ins, out, 0, 0, 0, 0f);
+            return new OrigRecipeSnapshot("stonecutting", id, ins, out, 0, 0, 0, 0f, serializerId, networkBytes);
         }
-        // mod recipe (= GTRecipe 等): 最小情報のみ
-        return new OrigRecipeSnapshot("other", id, ins, out, 0, 0, 0, 0f);
+        // mod recipe (= GTRecipe 等): bytes があれば復元時に fromNetwork で真 Recipe<?> 復元可能
+        return new OrigRecipeSnapshot("other", id, ins, out, 0, 0, 0, 0f, serializerId, networkBytes);
     }
 
-    /** snapshot から JEI 描画用 Recipe<?> を再構築。 "other" は null。 */
+    /** snapshot から JEI 描画用 Recipe<?> を再構築。 vanilla kind は専用構築、 "other" は network bytes から fromNetwork。 */
     @Nullable
     public Recipe<?> toRecipe() {
         ResourceLocation rl;
         try { rl = new ResourceLocation(id); }
         catch (Exception e) { return null; }
+        // v3.2.1: bytes + serializerId があれば最優先で fromNetwork 復元 (= 全 mod 対応)
+        if (serializerId != null && networkBytes != null) {
+            try {
+                var sid = new ResourceLocation(serializerId);
+                var ser = net.minecraftforge.registries.ForgeRegistries.RECIPE_SERIALIZERS.getValue(sid);
+                if (ser != null) {
+                    var buf = new net.minecraft.network.FriendlyByteBuf(
+                        io.netty.buffer.Unpooled.wrappedBuffer(networkBytes));
+                    Recipe<?> rec = ser.fromNetwork(rl, buf);
+                    if (rec != null) return rec;
+                }
+            } catch (Exception e) {
+                Credit.LOGGER.debug("[CraftPattern] OrigRecipeSnapshot.toRecipe: fromNetwork failed for {}: {}", id, e.toString());
+            }
+        }
         try {
             switch (kind) {
                 case "smelting" -> {
@@ -149,6 +189,9 @@ public record OrigRecipeSnapshot(
         ListTag list = new ListTag();
         for (ItemStack s : inputs) list.add(s.save(new CompoundTag()));
         t.put("ins", list);
+        // v3.2.1: bytes + serializerId (optional)
+        if (serializerId != null) t.putString("sid", serializerId);
+        if (networkBytes != null && networkBytes.length > 0) t.putByteArray("nbb", networkBytes);
         return t;
     }
 
@@ -162,12 +205,15 @@ public record OrigRecipeSnapshot(
                 ListTag list = t.getList("ins", Tag.TAG_COMPOUND);
                 for (int i = 0; i < list.size(); i++) ins.add(ItemStack.of(list.getCompound(i)));
             }
+            String sid = t.contains("sid") ? t.getString("sid") : null;
+            byte[] nbb = t.contains("nbb") ? t.getByteArray("nbb") : null;
             return new OrigRecipeSnapshot(
                 t.getString("kind"),
                 t.getString("id"),
                 ins, out,
                 t.getInt("w"), t.getInt("h"),
-                t.getInt("ct"), t.getFloat("xp"));
+                t.getInt("ct"), t.getFloat("xp"),
+                sid, nbb);
         } catch (Exception e) {
             return null;
         }

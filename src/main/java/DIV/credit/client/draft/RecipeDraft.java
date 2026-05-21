@@ -250,6 +250,31 @@ public interface RecipeDraft {
         return null;
     }
 
+    /**
+     * v3.0.1: recipeId 自動生成用 path。 default は {@link #outputItemPath()} (= 出力 path のみ)。
+     * 同 output で複数 recipe を持ち得る draft (Cooking 4 種 / Stonecutting) は override して
+     * type / input を絡めた一意 path を返す。 戻りはそのまま {@code credit:generated/<ここ>} になる。
+     */
+    @Nullable
+    default String autoIdPath() {
+        return outputItemPath();
+    }
+
+    /** {@link #autoIdPath()} の override 用 helper: Item / Tag の path を取り出す。 */
+    @Nullable
+    static String ingredientIdPath(IngredientSpec s) {
+        if (s == null) return null;
+        s = s.unwrap();
+        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
+            return rl != null ? rl.getPath() : null;
+        }
+        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+            return tg.tagId().getPath();
+        }
+        return null;
+    }
+
     @Nullable default IngredientSpec getOutput() { return null; }
 
     // ───── helpers for impls ─────

@@ -111,15 +111,15 @@ public final class IEKubeJSEmitter {
         return buildEventCustom(recipeId, "immersiveengineering:blast_furnace", f);
     }
 
-    /** bottling_machine: inputs[] + fluid + results[]。 */
+    /** bottling_machine: input (単数 ingredient) + fluid + results[]。 */
     @Nullable
     private static String emitBottling(String recipeId, IngredientSpec[] slots, SlotKind[] kinds) {
-        List<String> ins = collectAll(slots, kinds, SlotKind.ITEM_INPUT, IEKubeJSEmitter::itemIngredient);
+        String in = findFirst(slots, kinds, SlotKind.ITEM_INPUT, IEKubeJSEmitter::itemIngredient);
         String fluid = findFirst(slots, kinds, SlotKind.FLUID_INPUT, IEKubeJSEmitter::fluidJson);
         List<String> ops = collectAll(slots, kinds, SlotKind.ITEM_OUTPUT, IEKubeJSEmitter::itemOutputSimple);
-        if (ins.isEmpty() || fluid == null || ops.isEmpty()) return null;
+        if (in == null || fluid == null || ops.isEmpty()) return null;
         LinkedHashMap<String, String> f = new LinkedHashMap<>();
-        f.put("inputs", "[" + String.join(", ", ins) + "]");
+        f.put("input", in);
         f.put("fluid", fluid);
         f.put("results", "[" + String.join(", ", ops) + "]");
         return buildEventCustom(recipeId, "immersiveengineering:bottling_machine", f);

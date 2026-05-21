@@ -13,6 +13,8 @@ import mekanism.api.recipes.ingredients.ItemStackIngredient;
 import mekanism.api.recipes.ingredients.creator.IngredientCreatorAccess;
 import mekanism.common.recipe.impl.PressurizedReactionIRecipe;
 import mekanism.common.registries.MekanismGases;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
+import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -83,6 +85,47 @@ public class PressurizedReactionDraft implements RecipeDraft {
             duration      .toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
             energyRequired.toField("Energy",   NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
+    }
+
+    /**
+     * v3.0.1: GenericDraft.readSpecFromView を流用して 5 slot view を反映。
+     * duration / energyRequired は recipe instance から reflection で取得試行 (失敗時は default 維持)。
+     */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        try {
+            List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
+            int n = Math.min(views.size(), SLOT_COUNT);
+            int loaded = 0;
+            for (int i = 0; i < n; i++) {
+                var spec = DIV.credit.client.draft.GenericDraft.readSpecFromView(views.get(i));
+                if (!spec.isEmpty()) {
+                    slots[i] = spec;
+                    loaded++;
+                }
+            }
+            // duration / energy 抽出 (PressurizedReactionRecipe の field/getter から)
+            Object recipe = layout.getRecipe();
+            if (recipe instanceof PressurizedReactionRecipe prr) {
+                try {
+                    var durMethod = prr.getClass().getMethod("getDuration");
+                    Object durObj = durMethod.invoke(prr);
+                    if (durObj instanceof Integer di && di > 0) duration.set(di);
+                } catch (Exception ignored) {}
+                try {
+                    var enMethod = prr.getClass().getMethod("getEnergyRequired");
+                    Object enObj = enMethod.invoke(prr);
+                    if (enObj instanceof FloatingLong fl) energyRequired.set(fl.longValue());
+                } catch (Exception ignored) {}
+            }
+            Credit.LOGGER.info("[CraftPattern] PressurizedReactionDraft.loadFromRecipe {} → {}/{} slots",
+                jeiType.getUid(), loaded, n);
+            return loaded > 0;
+        } catch (Exception e) {
+            Credit.LOGGER.warn("[CraftPattern] PressurizedReactionDraft.loadFromRecipe failed for {}: {}",
+                jeiType.getUid(), e.toString());
+            return false;
+        }
     }
 
     @Override

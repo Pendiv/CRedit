@@ -54,21 +54,53 @@ public final class CreditCommand {
         event.getDispatcher().register(
             Commands.literal("craftpattern_setting").executes(CreditCommand::doSetting));
 
-        // v2.2.2: OMIT_MODID_PREFIX が true なら top-level エイリアスも登録
+        // v2.2.2: OMIT_MODID_PREFIX が master toggle、 各 short cmd は個別 toggle で gate。
+        // v3.0.1: 個別 toggle 化 — 他 MOD コマンドとの衝突を回避するため。
         // 注意: ConfigSpec が読み込まれてないと get() で例外。try でガード。
         boolean omitPrefix = false;
         try { omitPrefix = DIV.credit.CreditConfig.OMIT_MODID_PREFIX.get(); } catch (Exception ignored) {}
         if (omitPrefix) {
-            event.getDispatcher().register(Commands.literal("push")          .executes(CreditCommand::doPush));
-            event.getDispatcher().register(Commands.literal("commit")        .executes(CreditCommand::doCommit));
-            event.getDispatcher().register(Commands.literal("history")       .executes(CreditCommand::doHistory));
-            event.getDispatcher().register(Commands.literal("setting")       .executes(CreditCommand::doSetting));
-            event.getDispatcher().register(Commands.literal("import")        .executes(CreditCommand::doImport));
-            event.getDispatcher().register(Commands.literal("reconstruction").executes(CreditCommand::doReconstruction));
-            event.getDispatcher().register(Commands.literal("preview").executes(CreditCommand::doPreview));
-            event.getDispatcher().register(Commands.literal("status")        .executes(CreditCommand::doStatus));
-            DIV.credit.Credit.LOGGER.info("[CraftPattern] Registered top-level command aliases (/commit /push /history /setting /import /reconstruction /preview /status)");
+            java.util.List<String> registered = new java.util.ArrayList<>();
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_PUSH)) {
+                event.getDispatcher().register(Commands.literal("push").executes(CreditCommand::doPush));
+                registered.add("/push");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_COMMIT)) {
+                event.getDispatcher().register(Commands.literal("commit").executes(CreditCommand::doCommit));
+                registered.add("/commit");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_HISTORY)) {
+                event.getDispatcher().register(Commands.literal("history").executes(CreditCommand::doHistory));
+                registered.add("/history");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_SETTING)) {
+                event.getDispatcher().register(Commands.literal("setting").executes(CreditCommand::doSetting));
+                registered.add("/setting");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_IMPORT)) {
+                event.getDispatcher().register(Commands.literal("import").executes(CreditCommand::doImport));
+                registered.add("/import");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_RECONSTRUCTION)) {
+                event.getDispatcher().register(Commands.literal("reconstruction").executes(CreditCommand::doReconstruction));
+                registered.add("/reconstruction");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_PREVIEW)) {
+                event.getDispatcher().register(Commands.literal("preview").executes(CreditCommand::doPreview));
+                registered.add("/preview");
+            }
+            if (safeGet(DIV.credit.CreditConfig.SHORT_CMD_STATUS)) {
+                event.getDispatcher().register(Commands.literal("status").executes(CreditCommand::doStatus));
+                registered.add("/status");
+            }
+            DIV.credit.Credit.LOGGER.info("[CraftPattern] Registered top-level command aliases: {}",
+                registered.isEmpty() ? "(none — all individual toggles OFF)" : String.join(" ", registered));
         }
+    }
+
+    /** ConfigSpec が未ロードでも安全に bool 取得。失敗時 true (= 既存挙動互換)。 */
+    private static boolean safeGet(net.minecraftforge.common.ForgeConfigSpec.BooleanValue v) {
+        try { return v.get(); } catch (Exception e) { return true; }
     }
 
     /**

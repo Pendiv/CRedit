@@ -30,6 +30,14 @@ public final class CreditConfig {
         HistoryMax(int v) { this.limit = v; }
     }
 
+    /**
+     * v3.0.1: クリップボード履歴の保存強度。
+     * TRANSIENT  : BuilderScreen を閉じると消える
+     * SESSION    : ゲーム終了まで保持 (default)
+     * PERSISTENT : ファイルに保存、 ゲーム再起動後も復元
+     */
+    public enum ClipboardPersistence { TRANSIENT, SESSION, PERSISTENT }
+
     public static final ForgeConfigSpec SPEC;
     public static final ForgeConfigSpec.ConfigValue<String> DUMP_ROOT;
     public static final ForgeConfigSpec.IntValue FLUID_DEFAULT_AMOUNT;
@@ -54,6 +62,23 @@ public final class CreditConfig {
 
     // ─── v2.2.2 modid prefix omitted commands ───
     public static final ForgeConfigSpec.BooleanValue OMIT_MODID_PREFIX;
+
+    // ─── v3.0.1: 短縮コマンド個別 on/off (master = OMIT_MODID_PREFIX) ───
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_PUSH;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_COMMIT;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_HISTORY;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_SETTING;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_IMPORT;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_RECONSTRUCTION;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_PREVIEW;
+    public static final ForgeConfigSpec.BooleanValue SHORT_CMD_STATUS;
+
+    // ─── v3.0.1: keybind / clipboard (= BuilderScreen 内挙動の便利機能) ───
+    public static final ForgeConfigSpec.BooleanValue SPECIAL_KEYBINDS_ENABLED;
+    public static final ForgeConfigSpec.BooleanValue QUICK_ADD_HOTBAR;
+    public static final ForgeConfigSpec.BooleanValue CLIPBOARD_ENABLED;
+    public static final ForgeConfigSpec.BooleanValue CLIPBOARD_MULTI;
+    public static final ForgeConfigSpec.EnumValue<ClipboardPersistence> CLIPBOARD_PERSISTENCE;
 
     // ─── v2.0.9 edit mode → category 切替時にグリッド内容保持するか ───
     public static final ForgeConfigSpec.BooleanValue PRESERVE_EDIT_GRID_ON_SWITCH;
@@ -138,10 +163,48 @@ public final class CreditConfig {
         // v2.2.2 commands
         b.push("commands");
         OMIT_MODID_PREFIX = b.comment(
-                "When true, also register short top-level commands without the /credit prefix:",
-                "/commit, /push, /history, /setting, /status",
+                "Master toggle for short top-level commands (without /credit prefix).",
+                "When false, no short commands are registered.",
+                "When true, each command is registered if its individual toggle below is true.",
                 "Changes take effect on next world join (or game restart).")
             .define("omitModidPrefix", true);
+        // v3.0.1: 個別 toggle。 master = true 時のみ効く。
+        SHORT_CMD_PUSH           = b.comment("Register /push as alias for /credit push.").define("shortCmdPush", true);
+        SHORT_CMD_COMMIT         = b.comment("Register /commit.").define("shortCmdCommit", true);
+        SHORT_CMD_HISTORY        = b.comment("Register /history.").define("shortCmdHistory", true);
+        SHORT_CMD_SETTING        = b.comment("Register /setting.").define("shortCmdSetting", true);
+        SHORT_CMD_IMPORT         = b.comment("Register /import.").define("shortCmdImport", true);
+        SHORT_CMD_RECONSTRUCTION = b.comment("Register /reconstruction.").define("shortCmdReconstruction", true);
+        SHORT_CMD_PREVIEW        = b.comment("Register /preview.").define("shortCmdPreview", true);
+        SHORT_CMD_STATUS         = b.comment("Register /status.").define("shortCmdStatus", true);
+        b.pop();
+
+        // v3.0.1 keybind / clipboard (CONVENIENCE タブ)
+        b.push("keybind");
+        SPECIAL_KEYBINDS_ENABLED = b.comment(
+                "Master toggle for CraftPattern-only keybind features.",
+                "When ON: enables our special keys (digits 1-9, Ctrl+C/V, arrows)",
+                "         AND blocks other mods' keybinds (JEI lookup, minimap, etc.) from firing.",
+                "When OFF: normal screen behavior (other mod keys go through, our keys do nothing).")
+            .define("specialKeybindsEnabled", true);
+        QUICK_ADD_HOTBAR = b.comment(
+                "Pressing 1-9 inside CraftPattern places the item from that hotbar slot into the slot under mouse.",
+                "Copies item id + NBT (e.g. avaritia:singularity), count=1.")
+            .define("quickAddHotbar", true);
+        CLIPBOARD_ENABLED = b.comment(
+                "Enable Ctrl+C / Ctrl+V clipboard with a slot next to the inventory.",
+                "Copy targets: recipe area, player inventory, JEI ingredients.")
+            .define("clipboardEnabled", true);
+        CLIPBOARD_MULTI = b.comment(
+                "Keep up to 100 clipboard entries. Use Up/Down arrows to scroll the history",
+                "(↑ = newer side / ↓ = older side). OFF = single-slot, no arrows.")
+            .define("clipboardMulti", true);
+        CLIPBOARD_PERSISTENCE = b.comment(
+                "How long the clipboard history survives.",
+                "TRANSIENT: cleared when BuilderScreen closes.",
+                "SESSION: kept until game exits (default).",
+                "PERSISTENT: saved to <gameDir>/config/credit-clipboard.dat, restored on restart.")
+            .defineEnum("clipboardPersistence", ClipboardPersistence.SESSION);
         b.pop();
 
         // v2.0.9 edit mode 終了時の grid 保持

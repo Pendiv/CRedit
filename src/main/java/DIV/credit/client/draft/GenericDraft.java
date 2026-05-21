@@ -34,6 +34,8 @@ public final class GenericDraft implements RecipeDraft {
 
     // GT 系か（gtceu + StarT-Core 等の addon。recipe class が GTRecipe 派生）
     private final boolean isGt;
+    private final boolean isThermal;
+    private final boolean isIf;
     // Mek 系か（mekanism + EvolvedMekanism 等の extension。category が BaseRecipeCategory 派生）
     private final boolean isMek;
     // IE 系か（immersiveengineering 本体 + 派生。category が IERecipeCategory 派生）
@@ -61,6 +63,7 @@ public final class GenericDraft implements RecipeDraft {
 
     private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
                          boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
+                         boolean isThermal, boolean isIf,
                          long durationInit, long eutInit, java.util.LinkedHashMap<String, Long> intData) {
         this.jeiType = jeiType;
         this.kinds   = kinds;
@@ -70,6 +73,8 @@ public final class GenericDraft implements RecipeDraft {
         this.isMek = isMek;
         this.isIe = isIe;
         this.isCreate = isCreate;
+        this.isThermal = isThermal;
+        this.isIf = isIf;
         // v2.1.3: probe 由来の初期値は set() で代入 (present=true)。
         this.duration.set(durationInit);
         this.eut.set(eutInit);
@@ -146,6 +151,10 @@ public final class GenericDraft implements RecipeDraft {
                 && net.minecraftforge.fml.ModList.get().isLoaded("immersiveengineering");
             boolean isCreate = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat)
                 && net.minecraftforge.fml.ModList.get().isLoaded("create");
+            boolean isThermal = DIV.credit.client.draft.thermal.ThermalSupport.isThermalCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("thermal");
+            boolean isIf = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("industrialforegoing");
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
             String cleanroomInit = null;
@@ -169,8 +178,8 @@ public final class GenericDraft implements RecipeDraft {
                 Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={} cleanroom={} electric={}",
                     rt.getUid(), durationInit, eutInit, intDataInit, cleanroomInit, isElectric);
             }
-            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={}",
-                rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate);
+            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={} isThermal={} isIf={}",
+                rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate, isThermal, isIf);
             // v2.1.4: GenericDraft 経路 (GT/Mek/IE/Create/AE2/Avaritia) は
             // 全 system が ingredient JSON に count を書けるので、slot count を MAX_VALUE 固定。
             // v2.0.12 の probe ロジック (sample 全部 count=1 → 1 lock) は GT で右クリック
@@ -180,7 +189,8 @@ public final class GenericDraft implements RecipeDraft {
             int[] slotMaxCounts = new int[slotCount];
             for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = Integer.MAX_VALUE;
 
-            GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, durationInit, eutInit, intDataInit);
+            GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, isThermal, isIf,
+                durationInit, eutInit, intDataInit);
             d.cleanroomType = cleanroomInit;
             d.gtIsElectric = isElectric;
             d.slotMaxCounts = slotMaxCounts;
@@ -312,8 +322,11 @@ public final class GenericDraft implements RecipeDraft {
         }
     }
 
-    /** Slot view の displayed ingredient を IngredientSpec に変換。複数候補 ITypedIngredient のうち最初を採用。 */
-    private static IngredientSpec readSpecFromView(IRecipeSlotView view) {
+    /**
+     * Slot view の displayed ingredient を IngredientSpec に変換。複数候補 ITypedIngredient のうち最初を採用。
+     * v3.0.1: hand-written draft (GTAssembler / GTCompressor / PressurizedReaction 等) からも呼ばれるため public 化。
+     */
+    public static IngredientSpec readSpecFromView(IRecipeSlotView view) {
         var displayed = view.getDisplayedIngredient();
         ITypedIngredient<?> ti;
         if (displayed.isPresent()) {
@@ -448,6 +461,16 @@ public final class GenericDraft implements RecipeDraft {
         if (isCreate) {
             String s = DIV.credit.client.draft.create.CreateKubeJSEmitter.emit(
                 recipeId, jeiType.getUid(), slots, kinds, heatLevel, keepHeldItem);
+            if (s != null) return s;
+        }
+        if (isThermal) {
+            String s = DIV.credit.client.draft.thermal.ThermalKubeJSEmitter.emit(
+                recipeId, jeiType.getUid(), slots, kinds);
+            if (s != null) return s;
+        }
+        if (isIf) {
+            String s = DIV.credit.client.draft.industrialforegoing.IFKubeJSEmitter.emit(
+                recipeId, jeiType.getUid(), slots, kinds);
             if (s != null) return s;
         }
         return emitCommentSkeleton(recipeId);

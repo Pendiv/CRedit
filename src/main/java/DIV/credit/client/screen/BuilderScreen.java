@@ -57,6 +57,11 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             new ResourceLocation(Credit.MODID, "ui/setting.png");
     private static final ResourceLocation QUESTION_TEX =
             new ResourceLocation(Credit.MODID, "ui/question.png");
+    /** v3.0.1: 特殊 NBT 警告 icon (= [!])。 question icon の右隣に出る。 */
+    private static final ResourceLocation WARN_TEX =
+            new ResourceLocation(Credit.MODID, "ui/warn.png");
+    public static final int WARN_W = 16;
+    public static final int WARN_H = 16;
     /** v2.0.0 編集モード badge。? icon と同じ位置に出す。 */
     private static final ResourceLocation CHOIS_TEX =
             new ResourceLocation(Credit.MODID, "ui/chois.png");
@@ -70,6 +75,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private static boolean persistenceLoaded = false;
     /** v2.1.0 staging.dat はゲーム起動毎 1 回読む（モード問わず常に保持）。 */
     private static boolean stagingLoaded = false;
+    /** v3.0.1 PERSISTENT clipboard も session で 1 回 load。 */
+    private static boolean clipboardLoaded = false;
 
     // ─────── v2.0.0 編集モード state（プロセスグローバル、JEI からの遷移で set）───────
     /** 編集中のオリジナルレシピ ID。null なら通常モード。 */
@@ -109,6 +116,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     private int questionX = -1, questionY;
     /** クリックで tooltip ON/OFF。hover では出さない (ユーザー要望)。 */
     private boolean questionTooltipOpen = false;
+    /** v3.0.1: warn icon ([!]) — exceptional NBT 検知時のみ描画。 question と同様 click toggle。 */
+    private int warnX = -1, warnY;
+    private boolean warnTooltipOpen = false;
+    /** v3.0.1: clipboard slot (= inventory 左上の左隣)。 CLIPBOARD_ENABLED ON の時のみ表示。 */
+    private int clipboardSlotX = -1, clipboardSlotY = -1;
+    private static final ResourceLocation CLIPBOARD_TEX =
+            new ResourceLocation(Credit.MODID, "ui/just_slots.png");
+    public static final int CLIPBOARD_SLOT_SIZE = 16;
 
     // Dynamic numeric fields (derived from current draft.numericFields())
     private final List<EditBox> numericBoxes = new ArrayList<>();
@@ -173,6 +188,16 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             if (DIV.credit.CreditConfig.EDIT_PERSISTENCE.get() == DIV.credit.CreditConfig.EditPersistence.MAX) {
                 DIV.credit.client.draft.DraftPersistence.load(DRAFT_STORE);
             }
+        }
+        // v3.0.1: PERSISTENT clipboard を session 中 1 回だけ load
+        if (!clipboardLoaded) {
+            clipboardLoaded = true;
+            try {
+                if (DIV.credit.CreditConfig.CLIPBOARD_PERSISTENCE.get()
+                    == DIV.credit.CreditConfig.ClipboardPersistence.PERSISTENT) {
+                    DIV.credit.client.clipboard.ClipboardPersistence.load();
+                }
+            } catch (Exception ignored) {}
         }
         // v2.2.6: staging + history は world join 時に ImmediateHistorySession.Hook で load される。
         // BuilderScreen.init 起動時は冗長だが、念のため stagingLoaded ガードで 1 回だけ走る fallback。
@@ -410,8 +435,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         }
         this.currentCategory = cat;
         lastCategory = cat;
-        // カテゴリ遷移で ? tooltip 自動 close
+        // カテゴリ遷移で ? / [!] tooltip 自動 close
         questionTooltipOpen = false;
+        warnTooltipOpen = false;
         recipeArea.setCategory(cat, DRAFT_STORE.getOrCreate(cat));
         rebuildNumericFields(recipeArea.getDraft());
         RecipeDraft draft = recipeArea.getDraft();
@@ -575,10 +601,13 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     }
 
     private String autoRecipeId(RecipeDraft draft) {
-        String outPath = draft.outputItemPath();
+        // v3.0.1: outputItemPath() → autoIdPath() に変更。
+        // Cooking / Stonecutting 等 同 output で並立し得る draft が type / input 込み path を返すことで
+        // RecipeIdResolver の _2 fallback に頼らずとも衝突を回避する。
+        String idPath = draft.autoIdPath();
         String base;
-        if (outPath != null && !outPath.isEmpty()) {
-            base = Credit.MODID + ":generated/" + outPath;
+        if (idPath != null && !idPath.isEmpty()) {
+            base = Credit.MODID + ":generated/" + idPath;
         } else {
             base = Credit.MODID + ":generated/recipe_" + (System.currentTimeMillis() % 100000);
         }
@@ -609,7 +638,49 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             g.fill(sx - 1, sy - 1, sx + 17, sy + 17, 0xFF8B8B8B);
             g.fill(sx,     sy,     sx + 16, sy + 16, 0xFF373737);
         }
+        renderClipboardSlot(g, mouseX, mouseY);
         if (tabBar != null) tabBar.draw(g);
+    }
+
+    /** v3.0.1: clipboard slot を inventory 左上の左に描画。 ON の時のみ。 */
+    private void renderClipboardSlot(GuiGraphics g, int mouseX, int mouseY) {
+        clipboardSlotX = clipboardSlotY = -1;
+        if (!safeBool(DIV.credit.CreditConfig.SPECIAL_KEYBINDS_ENABLED, true)) return;
+        if (!safeBool(DIV.credit.CreditConfig.CLIPBOARD_ENABLED, true)) return;
+        int x = leftPos + DIV.credit.client.menu.CreditBuilderMenu.INV_X - 22;
+        int y = topPos + DIV.credit.client.menu.CreditBuilderMenu.MAIN_Y;
+        clipboardSlotX = x; clipboardSlotY = y;
+        // slot 枠 (= 通常スロットと同じ配色)
+        g.fill(x - 1, y - 1, x + CLIPBOARD_SLOT_SIZE + 1, y + CLIPBOARD_SLOT_SIZE + 1, 0xFF8B8B8B);
+        g.fill(x,     y,     x + CLIPBOARD_SLOT_SIZE,     y + CLIPBOARD_SLOT_SIZE,     0xFF373737);
+        try {
+            g.blit(CLIPBOARD_TEX, x, y, 0, 0, CLIPBOARD_SLOT_SIZE, CLIPBOARD_SLOT_SIZE,
+                CLIPBOARD_SLOT_SIZE, CLIPBOARD_SLOT_SIZE);
+        } catch (Exception ignored) {}
+        DIV.credit.client.draft.IngredientSpec cur = DIV.credit.client.clipboard.Clipboard.INSTANCE.current();
+        if (cur != null && !cur.isEmpty()) {
+            DIV.credit.client.recipe.RecipeArea.renderSpecAt(g, cur, x, y);
+        }
+        // multi モード時、 cursor 位置表示 (= "3/12" など、 スロットの左隣)
+        if (safeBool(DIV.credit.CreditConfig.CLIPBOARD_MULTI, true)
+            && DIV.credit.client.clipboard.Clipboard.INSTANCE.size() > 1) {
+            int cur1 = DIV.credit.client.clipboard.Clipboard.INSTANCE.cursor() + 1;
+            int tot = DIV.credit.client.clipboard.Clipboard.INSTANCE.size();
+            String txt = cur1 + "/" + tot;
+            int tw = font.width(txt);
+            g.drawString(font, txt, x - 2 - tw,
+                y + CLIPBOARD_SLOT_SIZE - font.lineHeight, 0xFFAAAAAA, false);
+        }
+        // hover tooltip
+        boolean hover = mouseX >= x && mouseX < x + CLIPBOARD_SLOT_SIZE
+                     && mouseY >= y && mouseY < y + CLIPBOARD_SLOT_SIZE;
+        if (hover) {
+            g.fill(x, y, x + CLIPBOARD_SLOT_SIZE, y + CLIPBOARD_SLOT_SIZE, 0x33FFFFFF);
+        }
+    }
+
+    private static boolean safeBool(net.minecraftforge.common.ForgeConfigSpec.BooleanValue v, boolean fallback) {
+        try { return v.get(); } catch (Exception e) { return fallback; }
     }
 
     @Override
@@ -629,6 +700,7 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         renderSettingsButton(g, mouseX, mouseY);
         renderHeatToggle(g, mouseX, mouseY);
         renderQuestionHelp(g, mouseX, mouseY);
+        renderWarnIcon(g, mouseX, mouseY);
         tagBar.render(g, mouseX, mouseY);
         stackBuilder.render(g, mouseX, mouseY);
         energyHelper.render(g, font, mouseX, mouseY);
@@ -860,6 +932,33 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         }
     }
 
+    /**
+     * v3.0.1: [!] 警告 icon。 特殊 NBT (GT Assembly Line データスティック等) を含む recipe を
+     * 表示してる時のみ、 [?] icon の右隣に出す。 hover で highlight、 click で tooltip toggle。
+     */
+    private void renderWarnIcon(GuiGraphics g, int mouseX, int mouseY) {
+        warnX = -1;
+        if (currentCategory == null) return;
+        if (!recipeArea.currentRecipeHasExceptionalNbt()) return;
+        // 位置: question icon の右に 2px ギャップを置く (question が出てれば +18, 出てなくても基準位置 +18)
+        warnX = leftPos + 2 + QUESTION_W + 2;
+        warnY = recipeAreaTop + 2;
+        boolean hover = mouseX >= warnX && mouseX < warnX + WARN_W
+                     && mouseY >= warnY && mouseY < warnY + WARN_H;
+        if (hover) g.fill(warnX - 1, warnY - 1,
+                          warnX + WARN_W + 1, warnY + WARN_H + 1, 0x66FFFFFF);
+        g.blit(WARN_TEX, warnX, warnY, 0, 0, WARN_W, WARN_H, WARN_W, WARN_H);
+        if (warnTooltipOpen) {
+            Component header = Component.translatable("gui.credit.warn.header")
+                .withStyle(ChatFormatting.GOLD);
+            Component body = Component.translatable("gui.credit.warn.exceptional_nbt")
+                .withStyle(ChatFormatting.GRAY);
+            Component hint = Component.translatable("gui.credit.unsupported.click_close")
+                .withStyle(ChatFormatting.DARK_GRAY);
+            g.renderComponentTooltip(font, java.util.List.of(header, body, hint), mouseX, mouseY);
+        }
+    }
+
     /** Settings (gear) ボタン：常時表示、画面右上付近。dump とは独立。 */
     private void renderSettingsButton(GuiGraphics g, int mouseX, int mouseY) {
         settingsX = leftPos + imageWidth - SETTINGS_W - 2;
@@ -915,9 +1014,30 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         }
         if (tabBar != null && tabBar.mouseClicked(mx, my, button)) return true;
 
+        // v3.0.1: clipboard slot click handling (= 右クリで count/amount +1、 SHIFT+右で +8)
+        if (clipboardSlotX >= 0
+            && mx >= clipboardSlotX && mx < clipboardSlotX + CLIPBOARD_SLOT_SIZE
+            && my >= clipboardSlotY && my < clipboardSlotY + CLIPBOARD_SLOT_SIZE) {
+            if (button == 1) {
+                DIV.credit.client.draft.IngredientSpec cur =
+                    DIV.credit.client.clipboard.Clipboard.INSTANCE.current();
+                if (cur != null && !cur.isEmpty()) {
+                    int delta = Screen.hasShiftDown() ? 8 : 1;
+                    int newCount = Math.max(1, cur.count() + delta);
+                    DIV.credit.client.clipboard.Clipboard.INSTANCE.replaceCurrent(
+                        DIV.credit.client.draft.IngredientSpec.withCount(cur, newCount));
+                    playClick();
+                }
+                return true;
+            }
+            return false;
+        }
+
         // Shift+left-click on recipe area → open JEI for current category (sets OriginTracker)
+        // v3.0.1: 対応カテゴリのみに制限。 unsupported (= brewing / compostable / smithing 等) には jump させない。
         if (button == 0 && Screen.hasShiftDown() && currentCategory != null
-            && recipeArea.isInside(mx, my)) {
+            && recipeArea.isInside(mx, my)
+            && DIV.credit.client.draft.DraftStore.isSupportedCategory(currentCategory)) {
             if (DIV.credit.client.jei.JeiNavigation.openCategory(currentCategory)) {
                 playClick();
                 return true;
@@ -954,10 +1074,21 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             playClick();
             return true;
         }
-        // ? tooltip 表示中、icon 以外をクリックしたら close (click は通常処理に流す)
+        // v3.0.1: [!] icon: 同様に click toggle
+        if (button == 0 && warnX >= 0
+            && mx >= warnX && mx < warnX + WARN_W
+            && my >= warnY && my < warnY + WARN_H) {
+            warnTooltipOpen = !warnTooltipOpen;
+            playClick();
+            return true;
+        }
+        // ? / [!] tooltip 表示中、icon 以外をクリックしたら close (click は通常処理に流す)
         if (questionTooltipOpen) {
             questionTooltipOpen = false;
             // return true せず、他 handler に click を委譲
+        }
+        if (warnTooltipOpen) {
+            warnTooltipOpen = false;
         }
         // Create カテゴリ別 toggle icon (heat or keepHeldItem)
         RecipeDraft hd = recipeArea.getDraft();
@@ -1255,7 +1386,123 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
                 if (k.matches(keyCode, scanCode)) return true;
             }
         }
+        // v3.0.1: 特殊キーバインド (= digit hotbar quick-add / Ctrl+C/V / ↑↓ clipboard cursor)
+        if (safeBool(DIV.credit.CreditConfig.SPECIAL_KEYBINDS_ENABLED, true)
+            && !isAnyTextFieldFocused()) {
+            if (handleSpecialKey(keyCode, modifiers)) return true;
+        }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    /**
+     * v3.0.1: 特殊キー dispatch。
+     * 戻り値 true = consume。 false なら通常処理に流す。
+     */
+    private boolean handleSpecialKey(int keyCode, int modifiers) {
+        boolean ctrl = (modifiers & 2) != 0;
+        boolean clipOn = safeBool(DIV.credit.CreditConfig.CLIPBOARD_ENABLED, true);
+        boolean multi = safeBool(DIV.credit.CreditConfig.CLIPBOARD_MULTI, true);
+        // Ctrl+C / Ctrl+V
+        if (ctrl && clipOn) {
+            if (keyCode == 67) { doClipboardCopy(); return true; }   // C
+            if (keyCode == 86) { doClipboardPaste(); return true; }  // V
+        }
+        // ↑↓ (cursor 移動、 clipboard ENABLED + MULTI のみ)
+        if (clipOn && multi) {
+            if (keyCode == 265) { DIV.credit.client.clipboard.Clipboard.INSTANCE.moveCursor(-1); return true; } // UP = newer
+            if (keyCode == 264) { DIV.credit.client.clipboard.Clipboard.INSTANCE.moveCursor(+1); return true; } // DOWN = older
+        }
+        // digit 1-9 = hotbar quick add (no modifier)
+        if (!ctrl && (modifiers & 1) == 0
+            && safeBool(DIV.credit.CreditConfig.QUICK_ADD_HOTBAR, true)
+            && keyCode >= 49 && keyCode <= 57) {
+            return doHotbarQuickAdd(keyCode - 49);
+        }
+        return false;
+    }
+
+    /** マウス座標を screen 座標で取得 (= keyPressed 内で hover slot を引くのに必要)。 */
+    private double[] mouseScreenCoords() {
+        var mc = Minecraft.getInstance();
+        double mx = mc.mouseHandler.xpos() * (double) mc.getWindow().getGuiScaledWidth() / (double) mc.getWindow().getScreenWidth();
+        double my = mc.mouseHandler.ypos() * (double) mc.getWindow().getGuiScaledHeight() / (double) mc.getWindow().getScreenHeight();
+        return new double[] { mx, my };
+    }
+
+    /** hovered slot から ingredient を抜き取って clipboard に push。 source 優先度: recipe area → clipboard slot → player inv → JEI overlay。 */
+    private void doClipboardCopy() {
+        double[] m = mouseScreenCoords();
+        // 1. recipe area
+        DIV.credit.client.draft.IngredientSpec spec = recipeArea.getEditedSpecAt(m[0], m[1]);
+        // 2. clipboard slot 自身は copy 対象外 (= 同じものを再 push しても意味ない)
+        // 3. player inventory hovered slot
+        if (spec == null && this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
+            spec = new DIV.credit.client.draft.IngredientSpec.Item(this.hoveredSlot.getItem().copy());
+        }
+        // 4. JEI ingredient list overlay
+        if (spec == null) spec = peekJeiOverlayIngredient();
+        if (spec == null || spec.isEmpty()) return;
+        // count=1 で copy (= NBT は維持)、 ただし Fluid/Gas/Tag は amount/count をそのまま
+        if (spec instanceof DIV.credit.client.draft.IngredientSpec.Item it) {
+            net.minecraft.world.item.ItemStack copy = it.stack().copy();
+            copy.setCount(1);
+            spec = new DIV.credit.client.draft.IngredientSpec.Item(copy);
+        }
+        DIV.credit.client.clipboard.Clipboard.INSTANCE.push(spec);
+        playClick();
+    }
+
+    /** clipboard.current() を recipe area の mouse 下スロットに paste。 型不一致は silent fail。 */
+    private void doClipboardPaste() {
+        DIV.credit.client.draft.IngredientSpec spec = DIV.credit.client.clipboard.Clipboard.INSTANCE.current();
+        if (spec == null || spec.isEmpty()) return;
+        double[] m = mouseScreenCoords();
+        int idx = recipeArea.findSlotIndexAt(m[0], m[1]);
+        if (idx < 0) return;
+        if (recipeArea.setSlotIngredient(idx, spec)) {
+            playClick();
+        }
+    }
+
+    /** 指定 hotbar slot (= 0..8) のアイテム ID + NBT を mouse 下スロットに count=1 で置く。 */
+    private boolean doHotbarQuickAdd(int hotbarIdx) {
+        var p = Minecraft.getInstance().player;
+        if (p == null) return false;
+        var inv = p.getInventory();
+        if (hotbarIdx < 0 || hotbarIdx >= inv.items.size()) return false;
+        net.minecraft.world.item.ItemStack stack = inv.items.get(hotbarIdx);
+        if (stack == null || stack.isEmpty()) return false;
+        double[] m = mouseScreenCoords();
+        int idx = recipeArea.findSlotIndexAt(m[0], m[1]);
+        if (idx < 0) return false;
+        net.minecraft.world.item.ItemStack copy = stack.copy();
+        copy.setCount(1);
+        return recipeArea.setSlotIngredient(idx, new DIV.credit.client.draft.IngredientSpec.Item(copy));
+    }
+
+    /** JEI sidebar overlay の mouse 下 ingredient を IngredientSpec に変換。 取れなければ null。 */
+    @org.jetbrains.annotations.Nullable
+    private DIV.credit.client.draft.IngredientSpec peekJeiOverlayIngredient() {
+        var rt = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
+        if (rt == null) return null;
+        try {
+            var overlay = rt.getIngredientListOverlay();
+            if (overlay == null) return null;
+            // JEI 15.x: getIngredientUnderMouse は @Nullable V を直接返す (Optional ではない)
+            net.minecraft.world.item.ItemStack item =
+                overlay.getIngredientUnderMouse(mezz.jei.api.constants.VanillaTypes.ITEM_STACK);
+            if (item != null && !item.isEmpty()) {
+                net.minecraft.world.item.ItemStack copy = item.copy();
+                copy.setCount(1);
+                return new DIV.credit.client.draft.IngredientSpec.Item(copy);
+            }
+            net.minecraftforge.fluids.FluidStack fluid =
+                overlay.getIngredientUnderMouse(mezz.jei.api.forge.ForgeTypes.FLUID_STACK);
+            if (fluid != null && !fluid.isEmpty()) {
+                return new DIV.credit.client.draft.IngredientSpec.Fluid(fluid.copy());
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private boolean doUndo() {
@@ -1318,6 +1565,14 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             case MAX -> DIV.credit.client.draft.DraftPersistence.save(DRAFT_STORE);
             case NORMAL -> {} // keep in-memory until game exits
         }
+        // v3.0.1: clipboard 保持強度 に応じた lifecycle
+        try {
+            switch (DIV.credit.CreditConfig.CLIPBOARD_PERSISTENCE.get()) {
+                case TRANSIENT  -> DIV.credit.client.clipboard.Clipboard.INSTANCE.clear();
+                case PERSISTENT -> DIV.credit.client.clipboard.ClipboardPersistence.save();
+                case SESSION    -> {} // keep in-memory
+            }
+        } catch (Exception ignored) {}
     }
 
     // v3.0.0: preview command 等から呼ぶ getter 公開。

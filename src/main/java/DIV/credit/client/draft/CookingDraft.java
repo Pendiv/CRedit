@@ -24,30 +24,34 @@ import java.util.List;
 public class CookingDraft implements RecipeDraft {
 
     public enum Type {
-        SMELTING(RecipeTypes.SMELTING, "smelting", CookingBookCategory.MISC, 200, 0.7f),
-        BLASTING(RecipeTypes.BLASTING, "blasting", CookingBookCategory.MISC, 100, 0.7f),
-        SMOKING(RecipeTypes.SMOKING, "smoking", CookingBookCategory.FOOD, 100, 0.35f),
-        CAMPFIRE(RecipeTypes.CAMPFIRE_COOKING, "campfireCooking", CookingBookCategory.FOOD, 600, 0.35f);
+        // viewSlotCount: JEI が返す slot view 数。 smelting/blasting/smoking は FLAME slot 込みで 3、
+        // campfire は FLAME slot 描画なしで 2 (= JEI vanilla CampfireRecipeCategory より)。
+        SMELTING(RecipeTypes.SMELTING, "smelting", CookingBookCategory.MISC, 200, 0.7f, 3),
+        BLASTING(RecipeTypes.BLASTING, "blasting", CookingBookCategory.MISC, 100, 0.7f, 3),
+        SMOKING(RecipeTypes.SMOKING, "smoking", CookingBookCategory.FOOD, 100, 0.35f, 3),
+        CAMPFIRE(RecipeTypes.CAMPFIRE_COOKING, "campfireCooking", CookingBookCategory.FOOD, 600, 0.35f, 2);
 
         public final RecipeType<?>          jeiType;
         public final String                 kjsMethod;
         public final CookingBookCategory    cookCategory;
         public final int                    defaultTime;
         public final float                  defaultXp;
+        public final int                    viewSlotCount;
 
-        Type(RecipeType<?> jt, String km, CookingBookCategory cc, int dt, float dx) {
+        Type(RecipeType<?> jt, String km, CookingBookCategory cc, int dt, float dx, int vsc) {
             this.jeiType = jt; this.kjsMethod = km; this.cookCategory = cc;
-            this.defaultTime = dt; this.defaultXp = dx;
+            this.defaultTime = dt; this.defaultXp = dx; this.viewSlotCount = vsc;
         }
     }
 
-    public static final int SLOT_COUNT = 3;
+    /** v3.0.1: INPUT は全 type 共通で view[0]。 OUTPUT は type.viewSlotCount - 1 (= campfire は 1、 他は 2)。
+     *  IDX_FLAME は 3-slot type で 1、 campfire (2-slot) では -1 (= 存在しない) で setSlot 弾きが naturally skip。 */
     public static final int IDX_INPUT  = 0;
-    public static final int IDX_FLAME  = 1;
-    public static final int IDX_OUTPUT = 2;
+    public final int IDX_OUTPUT;
+    private final int IDX_FLAME;
 
     private final Type type;
-    private final IngredientSpec[] slots = new IngredientSpec[SLOT_COUNT];
+    private final IngredientSpec[] slots;
     // v2.1.3: xp (float) は個別 boolean 管理、cookingTime (int) は NullableLong。
     private float xp;
     private boolean xpPresent = true;
@@ -55,9 +59,12 @@ public class CookingDraft implements RecipeDraft {
 
     public CookingDraft(Type type) {
         this.type = type;
-        this.xp          = type.defaultXp;
+        this.IDX_OUTPUT = type.viewSlotCount - 1;
+        this.IDX_FLAME  = (type.viewSlotCount == 3) ? 1 : -1;
+        this.slots      = new IngredientSpec[type.viewSlotCount];
+        this.xp         = type.defaultXp;
         this.cookingTime.set(type.defaultTime);
-        for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
+        for (int i = 0; i < slots.length; i++) slots[i] = IngredientSpec.EMPTY;
     }
 
     public Type  getType()         { return type; }
@@ -76,7 +83,7 @@ public class CookingDraft implements RecipeDraft {
         );
     }
 
-    @Override public int slotCount() { return SLOT_COUNT; }
+    @Override public int slotCount() { return slots.length; }
     @Override public IngredientSpec getSlot(int i) { return slots[i]; }
     @Override public boolean isOutputSlot(int i) { return i == IDX_OUTPUT; }
     @Override public IngredientSpec getOutput() { return slots[IDX_OUTPUT]; }
@@ -90,19 +97,19 @@ public class CookingDraft implements RecipeDraft {
     @Override
     public int slotMaxCount(int slotIndex) {
         if (slotIndex == IDX_OUTPUT) return Integer.MAX_VALUE;
-        return 1;  // input (0) + flame (1) は 1 lock
+        return 1;  // input + flame は 1 lock
     }
 
     @Override
     public void setSlot(int i, IngredientSpec s) {
-        if (i == IDX_FLAME) return; // RENDER_ONLY
-        if (i < 0 || i >= SLOT_COUNT) return;
+        if (i == IDX_FLAME) return; // RENDER_ONLY (campfire は IDX_FLAME=-1 で naturally skip)
+        if (i < 0 || i >= slots.length) return;
         if (s == null) s = IngredientSpec.EMPTY;
         if (isOutputSlot(i) && s instanceof IngredientSpec.Tag) return;
         slots[i] = s;
     }
 
-    /** AbstractCookingRecipe (smelting/blasting/smoking/campfire 共通) を 3 スロットに反映。 */
+    /** AbstractCookingRecipe (smelting/blasting/smoking/campfire 共通) を slots に反映。 */
     @Override
     public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
         Object recipe = layout.getRecipe();
@@ -111,7 +118,7 @@ public class CookingDraft implements RecipeDraft {
                 recipe == null ? "null" : recipe.getClass().getName());
             return false;
         }
-        for (int i = 0; i < SLOT_COUNT; i++) slots[i] = IngredientSpec.EMPTY;
+        for (int i = 0; i < slots.length; i++) slots[i] = IngredientSpec.EMPTY;
         var ings = acr.getIngredients();
         if (!ings.isEmpty()) {
             ItemStack[] matches = ings.get(0).getItems();
@@ -147,6 +154,26 @@ public class CookingDraft implements RecipeDraft {
     @Override
     public String relativeOutputPath() {
         return "generated/" + type.name().toLowerCase() + ".js";
+    }
+
+    /**
+     * v3.0.1: 同 output で smelting / blasting / smoking / campfire が並立し得るので
+     * {@code <type>/<input>_<output>(+_<count> if !=1)} 形式で一意化。
+     * <p>例: smelting cobblestone -> iron_ingot → {@code smelting/cobblestone_iron_ingot}
+     *     blasting netherrack -> 11x netherite_block → {@code blasting/netherrack_netherite_block_11}
+     * <p>input または output が解決不能なら default ({@link #outputItemPath()}) に fallback。
+     */
+    @Override
+    public String autoIdPath() {
+        String inPath  = RecipeDraft.ingredientIdPath(slots[IDX_INPUT]);
+        String outPath = outputItemPath();
+        if (inPath == null || outPath == null) return outPath;
+        StringBuilder sb = new StringBuilder();
+        sb.append(type.name().toLowerCase()).append('/')
+          .append(inPath).append('_').append(outPath);
+        int outCount = slots[IDX_OUTPUT] == null ? 0 : slots[IDX_OUTPUT].count();
+        if (outCount > 1) sb.append('_').append(outCount);
+        return sb.toString();
     }
 
     @Override

@@ -6,6 +6,8 @@ import DIV.credit.client.draft.RecipeDraft;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
+import mezz.jei.api.gui.IRecipeLayoutDrawable;
+import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -60,6 +62,39 @@ public class GTCompressorDraft implements RecipeDraft {
             duration.toField("Duration", NumericField.Kind.INT, 1, Integer.MAX_VALUE),
             EUt.toField("EUt",          NumericField.Kind.INT, 0, Integer.MAX_VALUE)
         );
+    }
+
+    /**
+     * v3.0.1: GenericDraft.readSpecFromView を流用して slot view を逐次反映。
+     * 加えて duration / EUt は GTSupport.probeMetadata で抽出。
+     */
+    @Override
+    public boolean loadFromRecipe(IRecipeLayoutDrawable<?> layout) {
+        try {
+            List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
+            int n = Math.min(views.size(), SLOT_COUNT);
+            int loaded = 0;
+            for (int i = 0; i < n; i++) {
+                var spec = DIV.credit.client.draft.GenericDraft.readSpecFromView(views.get(i));
+                if (!spec.isEmpty()) {
+                    slots[i] = spec;
+                    loaded++;
+                }
+            }
+            Object recipe = layout.getRecipe();
+            if (recipe instanceof Recipe<?> mcr) {
+                var meta = GTSupport.probeMetadata(mcr, jeiType.getUid());
+                if (meta.duration > 0) duration.set(meta.duration);
+                if (meta.eut > 0)      EUt.set(meta.eut);
+            }
+            Credit.LOGGER.info("[CraftPattern] GTCompressorDraft.loadFromRecipe {} → {}/{} slots",
+                jeiType.getUid(), loaded, n);
+            return loaded > 0;
+        } catch (Exception e) {
+            Credit.LOGGER.warn("[CraftPattern] GTCompressorDraft.loadFromRecipe failed for {}: {}",
+                jeiType.getUid(), e.toString());
+            return false;
+        }
     }
 
     @Override

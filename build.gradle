@@ -21,7 +21,7 @@ apply plugin: 'org.spongepowered.mixin'
 ext.credit = [
         mod_id                 : 'credit',
         mod_name               : 'credit',
-        mod_version            : '3.0.0',
+        mod_version            : '3.2.1beta',
         mod_group_id           : 'DIV',
         mod_license            : 'MIT',
         mod_authors            : '',
