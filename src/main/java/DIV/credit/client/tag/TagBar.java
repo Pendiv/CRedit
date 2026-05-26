@@ -662,11 +662,34 @@ public class TagBar {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
-        var gasStack = MekanismIngredientAdapter.toGasStack(gas);
-        if (gasStack.isEmpty()) return;
-        var type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+        // v3.3.x: chemicalType (gas/infusion/pigment/slurry) で renderer 系統分岐
+        Object stack;
+        mezz.jei.api.ingredients.IIngredientType<?> type;
+        switch (gas.chemicalType()) {
+            case GAS -> {
+                var st = MekanismIngredientAdapter.toGasStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+            }
+            case INFUSION -> {
+                var st = MekanismIngredientAdapter.toInfusionStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_INFUSION;
+            }
+            case PIGMENT -> {
+                var st = MekanismIngredientAdapter.toPigmentStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_PIGMENT;
+            }
+            case SLURRY -> {
+                var st = MekanismIngredientAdapter.toSlurryStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_SLURRY;
+            }
+            default -> { return; }
+        }
         var renderer = (mezz.jei.api.ingredients.IIngredientRenderer) rt.getIngredientManager().getIngredientRenderer(type);
-        renderer.render(g, gasStack, x, y);
+        renderer.render(g, stack, x, y);
     }
 
     /** CHANCE モード時、EditBox 右端に ▾ ボタンを重ねて描画。dropdown 再オープン用。 */
@@ -816,7 +839,9 @@ public class TagBar {
         return switch (categoryNamespace) {
             case "minecraft" -> {
                 java.util.List<IngredientSpec.ItemOption> opts = new java.util.ArrayList<>(2);
-                if (isDamageableItem(cfgContent)) opts.add(IngredientSpec.ItemOption.VANILLA_DAMAGE);
+                // v3.2.x: Tag 指定 (= GT hammer 等の tools/<x> tag) でも耐久消費を許可。
+                //   damageable item or Tag なら VANILLA_DAMAGE 候補。
+                if (isDamageableItemOrTag(cfgContent)) opts.add(IngredientSpec.ItemOption.VANILLA_DAMAGE);
                 opts.add(IngredientSpec.ItemOption.VANILLA_KEEP);
                 yield opts;
             }
@@ -830,11 +855,14 @@ public class TagBar {
         };
     }
 
-    /** 耐久値を持つ Item か（Tag/Fluid/Gas は対象外）。 */
-    private static boolean isDamageableItem(IngredientSpec spec) {
+    /** 耐久値を持つ Item or Tag (= tag 内身は不問、 user 判断)。 Fluid/Gas は対象外。 */
+    private static boolean isDamageableItemOrTag(IngredientSpec spec) {
         IngredientSpec base = spec.unwrap();
         if (base instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             return it.stack().getItem().canBeDepleted();
+        }
+        if (base instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+            return true;
         }
         return false;
     }

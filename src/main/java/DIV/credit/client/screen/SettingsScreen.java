@@ -39,9 +39,11 @@ public class SettingsScreen extends Screen {
     // v3.0.1 keybind/clipboard
     private boolean specialKeybindsEnabled, quickAddHotbar, clipboardEnabled, clipboardMulti;
     private CreditConfig.ClipboardPersistence clipboardPersistence;
+    // v3.2.x chance default
+    private int chanceDefaultMille, chanceDefaultBoost;
 
     // ─── transient widgets (タブ切替で破棄、 再生成時に state から復元) ───
-    private EditBox dumpRootBox, fluidDefaultBox, gasDefaultBox;
+    private EditBox dumpRootBox, fluidDefaultBox, gasDefaultBox, chanceMilleBox, chanceBoostBox;
 
     // ─── hit boxes (active tab 内のみ有効、 それ以外は -1) ───
     private int persistenceSlotX = -1, persistenceSlotY;
@@ -101,6 +103,8 @@ public class SettingsScreen extends Screen {
         clipboardEnabled  = CreditConfig.CLIPBOARD_ENABLED.get();
         clipboardMulti    = CreditConfig.CLIPBOARD_MULTI.get();
         clipboardPersistence = CreditConfig.CLIPBOARD_PERSISTENCE.get();
+        chanceDefaultMille = CreditConfig.CHANCE_DEFAULT_MILLE.get();
+        chanceDefaultBoost = CreditConfig.CHANCE_DEFAULT_BOOST.get();
     }
 
     /** タブ切替前に、 EditBox の現値を state に吸い上げ。 widget 破棄で値が失われるのを防ぐ。 */
@@ -111,6 +115,12 @@ public class SettingsScreen extends Screen {
         }
         if (gasDefaultBox != null) {
             try { gasDefault = Math.max(1, Integer.parseInt(gasDefaultBox.getValue().trim())); } catch (NumberFormatException ignored) {}
+        }
+        if (chanceMilleBox != null) {
+            try { chanceDefaultMille = Math.max(0, Math.min(1000, Integer.parseInt(chanceMilleBox.getValue().trim()))); } catch (NumberFormatException ignored) {}
+        }
+        if (chanceBoostBox != null) {
+            try { chanceDefaultBoost = Math.max(0, Integer.parseInt(chanceBoostBox.getValue().trim())); } catch (NumberFormatException ignored) {}
         }
     }
 
@@ -123,7 +133,7 @@ public class SettingsScreen extends Screen {
         historySX = autoReloadSX = omitPrefixSX = preserveGridSX = unifiedFilesSX = -1;
         specialKeySX = quickAddSX = clipboardEnabledSX = clipboardMultiSX = clipboardPersistenceSX = -1;
         for (int i = 0; i < 8; i++) sCmdSX[i] = -1;
-        dumpRootBox = fluidDefaultBox = gasDefaultBox = null;
+        dumpRootBox = fluidDefaultBox = gasDefaultBox = chanceMilleBox = chanceBoostBox = null;
 
         int cx = this.width / 2;
         // ─── タブ bar ───
@@ -198,6 +208,17 @@ public class SettingsScreen extends Screen {
         Component clPersistLabel = Component.translatable("gui.credit.settings.clipboard.persistence");
         this.clipboardPersistenceSX = childX + font.width(clPersistLabel) + 6;
         this.clipboardPersistenceSY = 278;
+        // v3.2.x: chance default 2 行 (= 1000分率 + tier boost)
+        int y2 = 300;
+        this.chanceMilleBox = new EditBox(font, leftX + 200, y2, 60, 16, Component.literal("chanceMille"));
+        this.chanceMilleBox.setMaxLength(4);
+        this.chanceMilleBox.setValue(String.valueOf(chanceDefaultMille));
+        addRenderableWidget(this.chanceMilleBox);
+        y2 = 322;
+        this.chanceBoostBox = new EditBox(font, leftX + 200, y2, 60, 16, Component.literal("chanceBoost"));
+        this.chanceBoostBox.setMaxLength(5);
+        this.chanceBoostBox.setValue(String.valueOf(chanceDefaultBoost));
+        addRenderableWidget(this.chanceBoostBox);
     }
 
     private void initCritical(int cx) {
@@ -340,6 +361,8 @@ public class SettingsScreen extends Screen {
             CreditConfig.CLIPBOARD_PERSISTENCE.set(clipboardPersistence);
             CreditConfig.CLIPBOARD_PERSISTENCE.save();
         }
+        saveInt(CreditConfig.CHANCE_DEFAULT_MILLE, Math.max(0, Math.min(1000, chanceDefaultMille)));
+        saveInt(CreditConfig.CHANCE_DEFAULT_BOOST, Math.max(0, chanceDefaultBoost));
         Credit.LOGGER.info("[CraftPattern] Saved settings (v3.0.1, tabs)");
         onClose();
     }
@@ -418,6 +441,8 @@ public class SettingsScreen extends Screen {
         resetDef(CreditConfig.CLIPBOARD_ENABLED);
         resetDef(CreditConfig.CLIPBOARD_MULTI);
         resetDef(CreditConfig.CLIPBOARD_PERSISTENCE);
+        resetDef(CreditConfig.CHANCE_DEFAULT_MILLE);
+        resetDef(CreditConfig.CHANCE_DEFAULT_BOOST);
         Minecraft.getInstance().setScreen(new SettingsScreen(parent));
         announce(Component.translatable("gui.credit.settings.reset.done")
             .withStyle(ChatFormatting.GREEN));
@@ -556,6 +581,11 @@ public class SettingsScreen extends Screen {
             "gui.credit.settings.clipboard.multi.desc", false);
         drawLabelAt(g, "gui.credit.settings.clipboard.persistence", childX, clipboardPersistenceSY);
         renderClipboardPersistenceSlot(g, mouseX, mouseY);
+        // v3.2.x: chance default labels (= EditBox は右側、 label は左)
+        g.drawString(font, Component.translatable("gui.credit.settings.chance.default_mille")
+            .withStyle(ChatFormatting.GRAY), leftX, 304, 0xFFAAAAAA, false);
+        g.drawString(font, Component.translatable("gui.credit.settings.chance.default_boost")
+            .withStyle(ChatFormatting.GRAY), leftX, 326, 0xFFAAAAAA, false);
     }
 
     /** 3-level enum slot for ClipboardPersistence (TRANSIENT/SESSION/PERSISTENT)。 */

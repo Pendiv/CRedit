@@ -1,6 +1,7 @@
 package DIV.credit.client.draft;
 
 import DIV.credit.Credit;
+import com.google.gson.JsonElement;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.forge.ForgeTypes;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
@@ -14,6 +15,7 @@ import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fml.ModList;
 import org.jetbrains.annotations.Nullable;
@@ -36,6 +38,7 @@ public final class GenericDraft implements RecipeDraft {
     private final boolean isGt;
     private final boolean isThermal;
     private final boolean isIf;
+    private final boolean isBotania;
     // Mek 系か（mekanism + EvolvedMekanism 等の extension。category が BaseRecipeCategory 派生）
     private final boolean isMek;
     // IE 系か（immersiveengineering 本体 + 派生。category が IERecipeCategory 派生）
@@ -49,6 +52,8 @@ public final class GenericDraft implements RecipeDraft {
     /** v2.1.3: NullableLong に統一。get()/set()/isPresent()/clear() で扱う。emit ガード必須。 */
     private final RecipeDraft.NullableLong duration = new RecipeDraft.NullableLong();
     private final RecipeDraft.NullableLong eut = new RecipeDraft.NullableLong();
+    /** v3.2.x: Botania mana 系 recipe (= mana_pool / runic_altar / terra_plate) の mana 要求量。 */
+    private final RecipeDraft.NullableLong mana = new RecipeDraft.NullableLong();
     private final java.util.LinkedHashMap<String, Long> intDataValues = new java.util.LinkedHashMap<>();
     /** v2.0.8 GT cleanroom requirement (e.g. "cleanroom" / "sterile_cleanroom" / null = none). */
     @Nullable private String cleanroomType = null;
@@ -60,10 +65,14 @@ public final class GenericDraft implements RecipeDraft {
      * 例: vanilla crafting output は count > 1 観測 → 無制限、入力は通常 1 → lock。
      */
     private int[] slotMaxCounts = null;  // null = 無制限 (probe 失敗時 fallback)
+    /** v3.3.x auto pipeline: probe 時に Codec で抽出した sample recipe JSON (= mirror emit template)。 */
+    @Nullable private JsonElement mirrorTemplate = null;
+    /** v3.3.x auto pipeline: 各 slot の sample 時 displayed ingredient id (= "minecraft:iron_ingot" 等)。 mirror 用 leaf 探索キー。 */
+    private String[] sampleIds = null;
 
     private GenericDraft(RecipeType<?> jeiType, SlotKind[] kinds,
                          boolean isGt, boolean isMek, boolean isIe, boolean isCreate,
-                         boolean isThermal, boolean isIf,
+                         boolean isThermal, boolean isIf, boolean isBotania,
                          long durationInit, long eutInit, java.util.LinkedHashMap<String, Long> intData) {
         this.jeiType = jeiType;
         this.kinds   = kinds;
@@ -75,9 +84,20 @@ public final class GenericDraft implements RecipeDraft {
         this.isCreate = isCreate;
         this.isThermal = isThermal;
         this.isIf = isIf;
+        this.isBotania = isBotania;
         // v2.1.3: probe 由来の初期値は set() で代入 (present=true)。
         this.duration.set(durationInit);
         this.eut.set(eutInit);
+        // v3.2.x: Botania mana 系 default 値 (= category path 別)
+        if (isBotania) {
+            long defaultMana = switch (jeiType.getUid().getPath()) {
+                case "terra_plate" -> 500_000L;
+                case "runic_altar" -> 5_000L;
+                case "mana_pool"   -> 1_000L;
+                default            -> 0L;
+            };
+            if (defaultMana > 0) this.mana.set(defaultMana);
+        }
         if (intData != null) this.intDataValues.putAll(intData);
     }
 
@@ -155,6 +175,8 @@ public final class GenericDraft implements RecipeDraft {
                 && net.minecraftforge.fml.ModList.get().isLoaded("thermal");
             boolean isIf = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat)
                 && net.minecraftforge.fml.ModList.get().isLoaded("industrialforegoing");
+            boolean isBotania = DIV.credit.client.draft.botania.BotaniaSupport.isBotaniaCategory(cat)
+                && net.minecraftforge.fml.ModList.get().isLoaded("botania");
             long durationInit = 0, eutInit = 0;
             java.util.LinkedHashMap<String, Long> intDataInit = new java.util.LinkedHashMap<>();
             String cleanroomInit = null;
@@ -178,8 +200,22 @@ public final class GenericDraft implements RecipeDraft {
                 Credit.LOGGER.info("[CraftPattern] GenericDraft GT metadata for {}: duration={} EUt={} intData={} cleanroom={} electric={}",
                     rt.getUid(), durationInit, eutInit, intDataInit, cleanroomInit, isElectric);
             }
-            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={} isThermal={} isIf={}",
-                rt.getUid(), views.size(), supported, isGt, isMek, isIe, isCreate, isThermal, isIf);
+            // v3.2.x Option A: Botania は sample probe の slot 数では足りない category がある
+            //   (= elven_trade で 2 input 描けない等)。 target slot count に従って padding。
+            //   INPUT 系を先頭に詰めて、 OUTPUT 系を後ろに。 順序は JEI category の
+            //   setRecipe での addSlot 順 (= INPUT 列挙 → OUTPUT 列挙) と揃える。
+            if (isBotania) {
+                int[] target = DIV.credit.client.draft.botania.BotaniaSupport.getTargetSlotCounts(rt.getUid().getPath());
+                if (target != null) {
+                    SlotKind[] padded = padBotaniaSlots(kinds, target[0], target[1]);
+                    if (padded.length != kinds.length) {
+                        kinds = padded;
+                        slotCount = kinds.length;
+                    }
+                }
+            }
+            Credit.LOGGER.info("[CraftPattern] GenericDraft created for {}: {} slots ({} supported) isGt={} isMek={} isIe={} isCreate={} isThermal={} isIf={} isBotania={}",
+                rt.getUid(), slotCount, supported, isGt, isMek, isIe, isCreate, isThermal, isIf, isBotania);
             // v2.1.4: GenericDraft 経路 (GT/Mek/IE/Create/AE2/Avaritia) は
             // 全 system が ingredient JSON に count を書けるので、slot count を MAX_VALUE 固定。
             // v2.0.12 の probe ロジック (sample 全部 count=1 → 1 lock) は GT で右クリック
@@ -189,11 +225,26 @@ public final class GenericDraft implements RecipeDraft {
             int[] slotMaxCounts = new int[slotCount];
             for (int i = 0; i < slotCount; i++) slotMaxCounts[i] = Integer.MAX_VALUE;
 
-            GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, isThermal, isIf,
+            GenericDraft d = new GenericDraft(rt, kinds, isGt, isMek, isIe, isCreate, isThermal, isIf, isBotania,
                 durationInit, eutInit, intDataInit);
             d.cleanroomType = cleanroomInit;
             d.gtIsElectric = isElectric;
             d.slotMaxCounts = slotMaxCounts;
+            // v3.3.x auto pipeline: hand-written 適用外の category 向けに mirror 用 sample data 確保。
+            // GT/Mek/IE/Create/Thermal/IF/Botania 専用 emitter 側が優先されるので、 GT 等で取り出しても無害。
+            try {
+                Object sampleObj = sample.get();
+                if (sampleObj instanceof Recipe<?> rec) {
+                    d.mirrorTemplate = DIV.credit.client.draft.auto.CodecExtractor.tryExtract(rec);
+                }
+                d.sampleIds = new String[slotCount];
+                for (int i = 0; i < slotCount && i < views.size(); i++) {
+                    d.sampleIds[i] = extractDisplayedItemId(views.get(i));
+                }
+            } catch (Exception e) {
+                Credit.LOGGER.debug("[CraftPattern] GenericDraft auto-capture failed for {}: {}",
+                    rt.getUid(), e.toString());
+            }
             return d;
         } catch (Exception e) {
             Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
@@ -210,8 +261,56 @@ public final class GenericDraft implements RecipeDraft {
 
     /** slot view の role + ingredient type → SlotKind。判定不可なら null。 */
     @Nullable
+    /**
+     * v3.2.x Botania padding: probe で得た kinds[] を、 target {maxInputs, maxOutputs} に応じて
+     * 拡張。 結果は [INPUT × maxInputs..., OUTPUT × maxOutputs] の順 (= JEI category の
+     * setRecipe addSlot 順と合致、 loadFromRecipe の positional mapping が壊れない)。
+     * すでに max を超えてれば変更なし。
+     */
+    private static SlotKind[] padBotaniaSlots(SlotKind[] kinds, int maxInputs, int maxOutputs) {
+        int curIn = 0, curOut = 0;
+        for (SlotKind k : kinds) {
+            if (k == SlotKind.ITEM_INPUT)  curIn++;
+            if (k == SlotKind.ITEM_OUTPUT) curOut++;
+        }
+        int newIn  = Math.max(curIn,  maxInputs);
+        int newOut = Math.max(curOut, maxOutputs);
+        if (newIn == curIn && newOut == curOut) return kinds;
+        SlotKind[] out = new SlotKind[newIn + newOut];
+        for (int i = 0; i < newIn; i++)  out[i]          = SlotKind.ITEM_INPUT;
+        for (int i = 0; i < newOut; i++) out[newIn + i]  = SlotKind.ITEM_OUTPUT;
+        return out;
+    }
+
+    /** v3.3.x auto pipeline: slot view から displayed ingredient の id 抽出 (= mirror leaf 探索キー)。 */
+    @Nullable
+    private static String extractDisplayedItemId(IRecipeSlotView view) {
+        var displayed = view.getDisplayedIngredient();
+        ITypedIngredient<?> ti = displayed.orElse(null);
+        if (ti == null) {
+            ti = view.getAllIngredients()
+                .filter(ITypedIngredient.class::isInstance)
+                .map(o -> (ITypedIngredient<?>) o)
+                .findFirst().orElse(null);
+        }
+        if (ti == null) return null;
+        Object obj = ti.getIngredient();
+        if (obj instanceof ItemStack stack && !stack.isEmpty()) {
+            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            return rl == null ? null : rl.toString();
+        }
+        if (obj instanceof FluidStack fs && !fs.isEmpty()) {
+            ResourceLocation rl = BuiltInRegistries.FLUID.getKey(fs.getFluid());
+            return rl == null ? null : rl.toString();
+        }
+        return null;
+    }
+
     private static SlotKind inferKind(IRecipeSlotView view) {
         RecipeIngredientRole role = view.getRole();
+        // v3.2.x: CATALYST role (= Botania petals の altar 表示等、 fixed decoration) は user 編集不可
+        // null kind 返却 → tryCreate の slot probe で skip される
+        if (role == RecipeIngredientRole.CATALYST) return null;
         boolean output = role == RecipeIngredientRole.OUTPUT;
         // ingredient type は最初に見つけたもので決める
         for (Object obj : view.getAllIngredients().toList()) {
@@ -223,9 +322,14 @@ public final class GenericDraft implements RecipeDraft {
             if (ForgeTypes.FLUID_STACK.getUid().equals(typeUid)) {
                 return output ? SlotKind.FLUID_OUTPUT : SlotKind.FLUID_INPUT;
             }
-            if (ModList.get().isLoaded("mekanism")
-                && "mekanism.api.chemical.gas.GasStack".equals(typeUid)) {
-                return output ? SlotKind.GAS_OUTPUT : SlotKind.GAS_INPUT;
+            if (ModList.get().isLoaded("mekanism")) {
+                // v3.3.x: Mek chemical 4 種は全て GAS_INPUT/OUTPUT slot kind で扱う (= IngredientSpec.Gas.chemicalType で区別)
+                if ("mekanism.api.chemical.gas.GasStack".equals(typeUid)
+                    || "mekanism.api.chemical.infuse.InfusionStack".equals(typeUid)
+                    || "mekanism.api.chemical.pigment.PigmentStack".equals(typeUid)
+                    || "mekanism.api.chemical.slurry.SlurryStack".equals(typeUid)) {
+                    return output ? SlotKind.GAS_OUTPUT : SlotKind.GAS_INPUT;
+                }
             }
         }
         return null;
@@ -326,6 +430,7 @@ public final class GenericDraft implements RecipeDraft {
      * Slot view の displayed ingredient を IngredientSpec に変換。複数候補 ITypedIngredient のうち最初を採用。
      * v3.0.1: hand-written draft (GTAssembler / GTCompressor / PressurizedReaction 等) からも呼ばれるため public 化。
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public static IngredientSpec readSpecFromView(IRecipeSlotView view) {
         var displayed = view.getDisplayedIngredient();
         ITypedIngredient<?> ti;
@@ -346,19 +451,13 @@ public final class GenericDraft implements RecipeDraft {
         if (obj instanceof FluidStack fs && !fs.isEmpty()) {
             return new IngredientSpec.Fluid(fs.copy());
         }
-        // Mek Gas: reflection で id + amount 抽出
-        if (ModList.get().isLoaded("mekanism")
-            && "mekanism.api.chemical.gas.GasStack".equals(ti.getType().getUid())) {
+        // v3.3.x: Mek chemical 4 種 (gas/infusion/pigment/slurry) を統一抽出。
+        //   MekanismIngredientAdapter.tryChemical が IIngredientType ベースで spec 返す。
+        if (ModList.get().isLoaded("mekanism")) {
             try {
-                var gasField = obj.getClass().getMethod("getType");
-                Object gasType = gasField.invoke(obj);
-                var idMethod = gasType.getClass().getMethod("getRegistryName");
-                ResourceLocation id = (ResourceLocation) idMethod.invoke(gasType);
-                var amtMethod = obj.getClass().getMethod("getAmount");
-                long amount = (long) amtMethod.invoke(obj);
-                if (id != null && amount > 0) {
-                    return new IngredientSpec.Gas(id, (int) Math.min(amount, Integer.MAX_VALUE));
-                }
+                IngredientSpec chem = DIV.credit.client.jei.mek.MekanismIngredientAdapter
+                    .tryChemical((mezz.jei.api.ingredients.IIngredientType<Object>) ti.getType(), obj);
+                if (chem != null && !chem.isEmpty()) return chem;
             } catch (Exception ignored) {}
         }
         return IngredientSpec.EMPTY;
@@ -385,11 +484,27 @@ public final class GenericDraft implements RecipeDraft {
             return DIV.credit.client.draft.gt.GTSupport.tryBuildRecipeWithSlots(
                 jeiType.getUid(), dur, eu, intDataValues, cleanroomType, slots, kinds);
         }
+        if (isBotania) {
+            // v3.2.x: reflection で本物 Recipe<?> class 構築 → JEI が Botania 純正 layout で render
+            long m = mana.isPresent() ? mana.get() : 0L;
+            Credit.LOGGER.info("[CraftPattern] Botania toRecipeInstance {} mana={}", jeiType.getUid(), m);
+            return DIV.credit.client.draft.botania.BotaniaRecipeFactory.tryBuild(
+                jeiType.getUid(), slots, kinds, m);
+        }
         return null;
     }
 
     @Override
     public java.util.List<NumericField> numericFields() {
+        // v3.2.x: Botania mana 系は mana NumericField 1 個
+        if (isBotania) {
+            String path = jeiType.getUid().getPath();
+            if ("mana_pool".equals(path) || "runic_altar".equals(path) || "terra_plate".equals(path)) {
+                return java.util.List.of(
+                    mana.toField("Mana", NumericField.Kind.INT, 0, Integer.MAX_VALUE));
+            }
+            return java.util.List.of();
+        }
         if (!isGt) return java.util.List.of();
         java.util.List<NumericField> fields = new java.util.ArrayList<>();
         // v2.1.3: 全 GT 数値 field を一斉 nullable=true 化 (helper.toField 経由)。
@@ -473,7 +588,69 @@ public final class GenericDraft implements RecipeDraft {
                 recipeId, jeiType.getUid(), slots, kinds);
             if (s != null) return s;
         }
+        if (isBotania) {
+            long m = mana.isPresent() ? mana.get() : 0L;
+            String s = DIV.credit.client.draft.botania.BotaniaKubeJSEmitter.emit(
+                recipeId, jeiType.getUid(), slots, kinds, m);
+            if (s != null) return s;
+        }
+        // v3.3.x auto pipeline: hand-written 全 fail なら mirror → pattern auto 試行。
+        // 通れば event.custom emit、 全 fail なら skeleton fallback。
+        String auto = tryAutoEmit(recipeId);
+        if (auto != null) return auto;
         return emitCommentSkeleton(recipeId);
+    }
+
+    /**
+     * auto pipeline entry。 cached strategy → mirror → pattern の順試行。
+     * 成功 strategy は {@link DIV.credit.client.draft.auto.LearnedSchemaCache} に記憶。
+     */
+    @Nullable
+    private String tryAutoEmit(String recipeId) {
+        String uid = jeiType.getUid().toString();
+        DIV.credit.client.draft.auto.LearnedSchemaCache.loadIfNeeded();
+        String cached = DIV.credit.client.draft.auto.LearnedSchemaCache.get(uid);
+        if (cached != null) {
+            String r = runAutoStrategy(cached, recipeId);
+            if (r != null) return r;
+            DIV.credit.client.draft.auto.LearnedSchemaCache.evict(uid);
+        }
+        // mirror (= 案 D) 優先
+        if (mirrorTemplate != null && sampleIds != null) {
+            var mr = DIV.credit.client.draft.auto.MirrorEmitter.tryEmit(
+                recipeId, jeiType.getUid(), slots, kinds, mirrorTemplate, sampleIds);
+            if (mr != null) {
+                DIV.credit.client.draft.auto.LearnedSchemaCache.put(uid,
+                    DIV.credit.client.draft.auto.LearnedSchemaCache.MIRROR_STRATEGY);
+                return mr.jsCode();
+            }
+        }
+        // pattern (= 案 E) fallback
+        var ar = DIV.credit.client.draft.auto.AutoPatternEmitter.tryEmit(
+            recipeId, jeiType.getUid(), slots, kinds);
+        if (ar != null) {
+            DIV.credit.client.draft.auto.LearnedSchemaCache.put(uid,
+                DIV.credit.client.draft.auto.LearnedSchemaCache.patternStrategy(ar.patternId()));
+            return ar.jsCode();
+        }
+        return null;
+    }
+
+    @Nullable
+    private String runAutoStrategy(String strategy, String recipeId) {
+        if (DIV.credit.client.draft.auto.LearnedSchemaCache.isMirror(strategy)) {
+            if (mirrorTemplate == null || sampleIds == null) return null;
+            var r = DIV.credit.client.draft.auto.MirrorEmitter.tryEmit(
+                recipeId, jeiType.getUid(), slots, kinds, mirrorTemplate, sampleIds);
+            return r == null ? null : r.jsCode();
+        }
+        if (DIV.credit.client.draft.auto.LearnedSchemaCache.isPattern(strategy)) {
+            // 簡略: 戦略 id 限定再実行ではなく全 pattern 再走 (= 戦略順並びで早期命中する)
+            var r = DIV.credit.client.draft.auto.AutoPatternEmitter.tryEmit(
+                recipeId, jeiType.getUid(), slots, kinds);
+            return r == null ? null : r.jsCode();
+        }
+        return null;
     }
 
     /**
@@ -572,10 +749,13 @@ public final class GenericDraft implements RecipeDraft {
         return sb.toString();
     }
 
+    /** skeleton fallback 検出用マーカー (= chat warn 判定で BuilderScreen が contains 検査)。 */
+    public static final String SKELETON_MARKER = "// CraftPattern: auto-support failed, skeleton fallback for ";
+
     /** Mod 別 KubeJS 形式が分からないとき用のコメントスケルトン。 */
     private String emitCommentSkeleton(String recipeId) {
         StringBuilder sb = new StringBuilder();
-        sb.append("    // Auto-generated draft for category ").append(jeiType.getUid()).append("\n");
+        sb.append("    ").append(SKELETON_MARKER).append(jeiType.getUid()).append("\n");
         sb.append("    // recipeId: ").append(recipeId).append("\n");
         sb.append("    // TODO: convert to actual KubeJS recipe call (mod-specific)\n");
         sb.append("    /*\n");

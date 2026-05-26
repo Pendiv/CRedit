@@ -263,6 +263,7 @@ public final class IEKubeJSEmitter {
             sb.append("\n");
         }
         sb.append("    }).id('").append(recipeId).append("');\n");
+        DIV.credit.client.io.EmitSelfTest.verifyFields(type, fields, recipeId);
         return sb.toString();
     }
 

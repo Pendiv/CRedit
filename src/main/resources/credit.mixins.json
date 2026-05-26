@@ -1,17 +1,12 @@
 {
-  "required": true,
+  "required": false,
   "minVersion": "0.8",
   "package": "DIV.credit.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_17",
   "refmap": "credit.refmap.json",
-  "mixins": [
-  ],
-  "client": [
-  ],
+  "mixins": [],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
-  },
-  "overwrites": {
-    "requireAnnotations": true
   }
 }

@@ -55,11 +55,20 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "CLIENT"
 
-# JEI — このMODはJEI連携を前提とする
+# JEI — v3.3.x で optional 化。 EMI 単独 user を救うため。
+# JEI か EMI のどちらかは必要 (= 起動時 runtime check で両方無し → chat WARN)
 [[dependencies."${mod_id}"]]
 modId = "jei"
-mandatory = true
+mandatory = false
 versionRange = "[15,)"
+ordering = "AFTER"
+side = "CLIENT"
+
+# EMI — v3.3.x 新規対応。 optional、 JEI と同等扱い。
+[[dependencies."${mod_id}"]]
+modId = "emi"
+mandatory = false
+versionRange = "[1.1,)"
 ordering = "AFTER"
 side = "CLIENT"
 

@@ -165,6 +165,8 @@ public final class DraftPersistence {
             t.putString("type", "gas");
             t.putString("id", g.gasId().toString());
             t.putInt("amt", g.amount());
+            // v3.3.x: chemicalType を保存 (= GAS/INFUSION/PIGMENT/SLURRY)、 欠落時は GAS で復元
+            t.putString("chem", g.chemicalType().name());
         } else {
             t.putString("type", "empty");
         }
@@ -183,8 +185,23 @@ public final class DraftPersistence {
                 }
                 case "fluidtag" -> IngredientSpec.ofFluidTag(
                     new ResourceLocation(t.getString("id")), t.getInt("amt"));
-                case "gas" -> IngredientSpec.ofGas(
-                    new ResourceLocation(t.getString("id")), t.getInt("amt"));
+                case "gas" -> {
+                    ResourceLocation gid = new ResourceLocation(t.getString("id"));
+                    int amt = t.getInt("amt");
+                    // v3.3.x: chem field で 4 種識別 (= 旧 NBT は欠落 → GAS で復元)
+                    IngredientSpec.ChemicalType ct;
+                    try {
+                        ct = t.contains("chem")
+                            ? IngredientSpec.ChemicalType.valueOf(t.getString("chem"))
+                            : IngredientSpec.ChemicalType.GAS;
+                    } catch (Exception e) { ct = IngredientSpec.ChemicalType.GAS; }
+                    yield switch (ct) {
+                        case GAS      -> IngredientSpec.ofGas(gid, amt);
+                        case INFUSION -> IngredientSpec.ofInfusion(gid, amt);
+                        case PIGMENT  -> IngredientSpec.ofPigment(gid, amt);
+                        case SLURRY   -> IngredientSpec.ofSlurry(gid, amt);
+                    };
+                }
                 default -> IngredientSpec.EMPTY;
             };
             if (t.contains("opt")) {

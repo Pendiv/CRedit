@@ -21,7 +21,7 @@ apply plugin: 'org.spongepowered.mixin'
 ext.credit = [
         mod_id                 : 'credit',
         mod_name               : 'credit',
-        mod_version            : '3.2.1beta',
+        mod_version            : '3.2.2',
         mod_group_id           : 'DIV',
         mod_license            : 'MIT',
         mod_authors            : '',
@@ -99,10 +99,11 @@ minecraft {
     }
 }
 
+// v3.2.x: credit は mixin classes 0 個。 config 登録外す (= 新規 dep の strict Mixin 版で
+//   empty config が parse error 起こす対策)。 refmap 生成も不要だが mixin{} block 自体は
+//   無いと processResources の token replace で参照されるため最小形で残す。
 mixin {
     add sourceSets.main, "${credit.mod_id}.refmap.json"
-
-    config "${credit.mod_id}.mixins.json"
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
@@ -150,6 +151,28 @@ dependencies {
     implementation fg.deobf("curse.maven:immersive-engineering-231951:6206989")
 
     implementation fg.deobf("curse.maven:create-328085:7178761")
+
+    // v3.2.x: dev 環境テスト用 (= 実環境 modpack へ deploy する前の動作確認に)。
+    //   industrial-foregoing + titanium (= IF の dep)、 botania + patchouli (= Botania の dep)、
+    //   mystical-agriculture + cucumber (= Mystical の dep)、 curios (= 各種共通 dep)。
+    implementation fg.deobf("curse.maven:industrial-foregoing-266515:7949862")
+    implementation fg.deobf("curse.maven:titanium-287342:7949783")
+    implementation fg.deobf("curse.maven:botania-225643:7982360")
+    implementation fg.deobf("curse.maven:patchouli-306770:7731017")
+    implementation fg.deobf("curse.maven:mystical-agriculture-246640:8034376")
+    implementation fg.deobf("curse.maven:cucumber-272335:7180783")
+    implementation fg.deobf("curse.maven:curios-309927:6418456")
+
+    // v3.3.x: EvolvedMekanism (= GTCsoloEU root build.gradle と同じ file ID)。
+    //   Mek chemical 4 種対応 + auto pipeline の検証用 (= 手書き emit を試さず mirror/pattern が
+    //   thermalizer / solidification_chamber 等の独自 recipe を救えるかテスト)。
+    //   IgleeLib は EvolvedMek の前提 (= mods.toml dependency)。
+    implementation fg.deobf("curse.maven:evolved-mekanism-1230085:7599591")
+    implementation fg.deobf("curse.maven:iglee-library-541199:6987117")
+
+    // v3.3.x: EMI 対応 (= 1.1.22+1.20.1+forge、 ユーザー Monifactory instance と同 ver)。
+    //   JEI と EMI のどちらか 1 つは user 環境で必須 (= mods.toml 側で mandatory=false + runtime check)。
+    implementation fg.deobf("curse.maven:emi-580555:6420945")
 
     // AE2 / Re-Avaritia (credit MOD v2.1.0 で対応 system 拡張用、reflection ベースなので runtimeOnly で十分)
     runtimeOnly fg.deobf("appeng:appliedenergistics2-forge:${credit.ae2_version}")

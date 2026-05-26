@@ -153,17 +153,9 @@ public class DraftStore {
             RecipeDraft d = DIV.credit.client.draft.create.CreateSupport.tryCreate(cat);
             if (d != null) return d;
         }
-        // GenericDraft 受け入れ条件:
-        //   - vanilla minecraft
-        //   - GT システム (gtceu 派生 mod 含む: StarT-Core 等)
-        //   - Mek システム (Mek extension 含む: EvolvedMekanism 等)
-        //   - IE システム (現状は IE 本体のみ、addon あれば自動対応)
-        //   - Create システム
-        boolean isThermal = DIV.credit.client.draft.thermal.ThermalSupport.isThermalCategory(cat);
-        boolean isIf      = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat);
-        String ns = rt.getUid().getNamespace();
-        if (!"minecraft".equals(ns) && !isGt && !isMek && !isIe && !isCreate && !isAe2 && !isAvaritia
-            && !isThermal && !isIf) return null;
+        // v3.3.x auto pipeline: 未知 mod namespace でも GenericDraft 受け入れ可能 (= mirror/pattern emit 試行)。
+        //   従来の「namespace whitelist」 を撤廃し、 GenericDraft.tryCreate の slot probe 失敗時に null 返却で篩う。
+        //   EXPLICIT_UNSUPPORTED が真に非対応な category を依然として gate する。
         var rt2 = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
         if (rt2 != null) {
             return GenericDraft.tryCreate(cat, rt2.getRecipeManager());
@@ -259,6 +251,12 @@ public class DraftStore {
         // v3.1.1: Industrial Foregoing 動的 recipe (= entity/biome whitelist + rarity weight)
         m.put("industrialforegoing:laser_drill_fluid",  UnsupportedReason.IRREGULAR);
         m.put("industrialforegoing:laser_drill_ore",    UnsupportedReason.IRREGULAR);
+        // v3.2.x: Botania IRREGULAR — brew id (= potion type)、 block state (StateIngredient)、 weight 系
+        m.put("botania:brewery",          UnsupportedReason.IRREGULAR);  // brew id 文字列必須
+        m.put("botania:pure_daisy",       UnsupportedReason.IRREGULAR);  // input/output が block state
+        m.put("botania:orechid",          UnsupportedReason.IRREGULAR);  // block + weight 確率テーブル
+        m.put("botania:orechid_ignem",    UnsupportedReason.IRREGULAR);  // 同
+        m.put("botania:marimorphosis",    UnsupportedReason.IRREGULAR);  // block + weight + biome bonus
         // Re-Avaritia: 9x9 Extreme Crafting Table (tier 4) は v2.1 で対応外
         m.put("avaritia:extreme_craft",                 UnsupportedReason.DEFERRED);
         EXPLICIT_UNSUPPORTED = java.util.Collections.unmodifiableMap(m);
@@ -273,23 +271,9 @@ public class DraftStore {
         RecipeType<?> rt = cat.getRecipeType();
         String uid = rt.getUid().toString();
         if (EXPLICIT_UNSUPPORTED.containsKey(uid)) return false;
-        if (RecipeTypes.CRAFTING.equals(rt)
-            || RecipeTypes.SMELTING.equals(rt)
-            || RecipeTypes.BLASTING.equals(rt)
-            || RecipeTypes.SMOKING.equals(rt)
-            || RecipeTypes.CAMPFIRE_COOKING.equals(rt)
-            || RecipeTypes.STONECUTTING.equals(rt)) return true;
-        boolean isGt       = DIV.credit.client.draft.gt.GTSupport.isGtCategory(cat);
-        boolean isMek      = DIV.credit.client.draft.mek.MekanismSupport.isMekCategory(cat);
-        boolean isIe       = DIV.credit.client.draft.ie.IESupport.isIeCategory(cat);
-        boolean isCreate   = DIV.credit.client.draft.create.CreateSupport.isCreateCategory(cat);
-        boolean isDe       = DIV.credit.client.draft.de.DESupport.isDeCategory(cat);
-        boolean isAe2      = DIV.credit.client.draft.ae2.AE2Support.isAe2Category(cat);
-        boolean isAvaritia = DIV.credit.client.draft.avaritia.AvaritiaSupport.isAvaritiaCategory(cat);
-        boolean isThermal  = DIV.credit.client.draft.thermal.ThermalSupport.isThermalCategory(cat);
-        boolean isIf       = DIV.credit.client.draft.industrialforegoing.IFSupport.isIFCategory(cat);
-        if (isGt || isMek || isIe || isCreate || isDe || isAe2 || isAvaritia || isThermal || isIf) return true;
-        return "minecraft".equals(rt.getUid().getNamespace());
+        // v3.3.x auto pipeline: namespace whitelist 撤廃。 EXPLICIT_UNSUPPORTED に列挙されてなければ
+        // すべて supported 扱いで UI button 表示。 draft 構築失敗時は BuilderScreen 側で fallback 通知。
+        return true;
     }
 
     /** UID から ? icon hover 用の reason を引く。EXPLICIT_UNSUPPORTED に無ければ null。 */

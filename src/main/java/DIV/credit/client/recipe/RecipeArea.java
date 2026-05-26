@@ -306,6 +306,10 @@ public class RecipeArea {
         var views = drawable.getRecipeSlotsView().getSlotViews();
         int limit = Math.min(views.size(), draft.slotCount());
         for (int i = 0; i < views.size(); i++) {
+            IRecipeSlotView vSkip = views.get(i);
+            // v3.2.x: CATALYST role の slot (= mana_pool の renderStack / petal の altar 等、 mod 固有の
+            // 永続表示) は credit 側で触らない (= JEI 原本の display + overlay を維持)
+            if (vSkip.getRole() == mezz.jei.api.recipe.RecipeIngredientRole.CATALYST) continue;
             IngredientSpec spec = (i < limit) ? draft.getSlot(i) : IngredientSpec.EMPTY;
             List<Optional<ITypedIngredient<?>>> displayList = List.of();
             if (!spec.isEmpty()) {
@@ -346,9 +350,29 @@ public class RecipeArea {
             }
             if (spec instanceof IngredientSpec.Gas g && g.gasId() != null) {
                 if (!net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) return null;
-                var gasStack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(g);
-                if (gasStack.isEmpty()) return null;
-                return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_GAS, gasStack).orElse(null);
+                // v3.3.x: chemicalType で分岐
+                switch (g.chemicalType()) {
+                    case GAS -> {
+                        var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(g);
+                        if (st.isEmpty()) return null;
+                        return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_GAS, st).orElse(null);
+                    }
+                    case INFUSION -> {
+                        var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toInfusionStack(g);
+                        if (st.isEmpty()) return null;
+                        return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_INFUSION, st).orElse(null);
+                    }
+                    case PIGMENT -> {
+                        var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toPigmentStack(g);
+                        if (st.isEmpty()) return null;
+                        return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_PIGMENT, st).orElse(null);
+                    }
+                    case SLURRY -> {
+                        var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toSlurryStack(g);
+                        if (st.isEmpty()) return null;
+                        return im.createTypedIngredient(mekanism.client.jei.MekanismJEI.TYPE_SLURRY, st).orElse(null);
+                    }
+                }
             }
             // Tag / FluidTag: convert to first matching item/fluid for display
             if (spec instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
@@ -413,6 +437,27 @@ public class RecipeArea {
                 g.fill(sx, sy, sx + 16, sy + 16, 0xFF373737);
             }
             renderSpec(g, rt, spec, sx, sy);
+            // v3.2.x: ItemOption visual indicators
+            drawOptionOverlay(g, spec, sx, sy);
+        }
+    }
+
+    /** option 視覚 indicator: VANILLA_DAMAGE → 右下 "-1" 白、 VANILLA_KEEP / GT_CATALYST → 右上 "NC" 赤。 */
+    private static void drawOptionOverlay(GuiGraphics g, IngredientSpec spec, int sx, int sy) {
+        IngredientSpec.ItemOption opt = spec.option();
+        if (opt == null || opt == IngredientSpec.ItemOption.NONE) return;
+        var font = Minecraft.getInstance().font;
+        if (opt == IngredientSpec.ItemOption.VANILLA_DAMAGE) {
+            String txt = "-1";
+            int tw = font.width(txt);
+            // 右下 (= 通常の count 表記位置)、 shadow 付き白
+            g.drawString(font, txt, sx + 17 - tw, sy + 17 - font.lineHeight, 0xFFFFFFFF, true);
+        } else if (opt == IngredientSpec.ItemOption.VANILLA_KEEP
+                || opt == IngredientSpec.ItemOption.GT_CATALYST) {
+            String txt = "NC";
+            int tw = font.width(txt);
+            // 右上、 赤 shadow 付き (= No Consume の略)
+            g.drawString(font, txt, sx + 17 - tw, sy - 1, 0xFFFF5555, true);
         }
     }
 
@@ -478,12 +523,35 @@ public class RecipeArea {
     private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
         if (!net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) return;
         DIV.credit.client.jei.mek.MekanismIngredientAdapter adapter = null;  // touch-load
-        var gasStack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(gas);
-        if (gasStack.isEmpty()) return;
-        var type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+        // v3.3.x: chemicalType で render 系統分岐
+        Object stack;
+        mezz.jei.api.ingredients.IIngredientType<?> type;
+        switch (gas.chemicalType()) {
+            case GAS -> {
+                var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+            }
+            case INFUSION -> {
+                var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toInfusionStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_INFUSION;
+            }
+            case PIGMENT -> {
+                var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toPigmentStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_PIGMENT;
+            }
+            case SLURRY -> {
+                var st = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toSlurryStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_SLURRY;
+            }
+            default -> { return; }
+        }
         var renderer = (mezz.jei.api.ingredients.IIngredientRenderer) rt.getIngredientManager()
             .getIngredientRenderer(type);
-        renderer.render(g, gasStack, x, y);
+        renderer.render(g, stack, x, y);
     }
 
     public void renderOverlays(GuiGraphics g, int mouseX, int mouseY) {
@@ -552,9 +620,9 @@ public class RecipeArea {
     /**
      * クリック挙動：
      * - 左クリ + cursor 非空 → 配置（出力スロットに Tag は不可で silently 拒否）
-     * - 右クリ（修飾なし） → no-op
-     * - Ctrl+右 → このスロットだけクリア
-     * - Shift+右 → 全スロットクリア
+     * - 右クリ（修飾なし） → count/amount +1 (= circuit item は番号+1、 後述)
+     * - Shift+右 → このスロットだけクリア
+     * - Ctrl+右 → 全スロットクリア
      */
     /** RecipeArea の矩形に mx,my が含まれるか。Shift+click 等の hit-test 用。 */
     public boolean isInside(double mx, double my) {
@@ -602,7 +670,8 @@ public class RecipeArea {
                 rebuildDrawable();
             }
         } else if (button == 1) {
-            if (Screen.hasShiftDown()) {
+            // v3.2.x: SHIFT = このスロットのみ、 CTRL = 全 slot clear (= 旧 SHIFT/CTRL 入れ替え)
+            if (Screen.hasControlDown()) {
                 boolean anyChange = false;
                 for (int i = 0; i < draft.slotCount(); i++) {
                     if (!draft.getSlot(i).isEmpty()) {
@@ -611,15 +680,20 @@ public class RecipeArea {
                     }
                 }
                 if (anyChange) rebuildDrawable();
-            } else if (Screen.hasControlDown()) {
+            } else if (Screen.hasShiftDown()) {
                 if (!draft.getSlot(slotIndex).isEmpty()) {
                     draft.setSlot(slotIndex, IngredientSpec.EMPTY);
                     rebuildDrawable();
                 }
             } else if (cursorEmpty) {
-                // bare right-click WITH EMPTY CURSOR: increment count by spec step
                 IngredientSpec current = draft.getSlot(slotIndex);
                 if (!current.isEmpty()) {
+                    // v3.2.x: GT programmed_circuit は count でなく Configuration NBT +1
+                    if (tryIncrementCircuit(slotIndex, current)) {
+                        rebuildDrawable();
+                        return true;
+                    }
+                    // bare right-click WITH EMPTY CURSOR: increment count by spec step
                     // v2.0.12: draft の slot max count を尊重 (1 ロックの slot では何もしない)
                     int slotCap = draft.slotMaxCount(slotIndex);
                     if (slotCap <= 1) return true;  // count 増不可
@@ -632,6 +706,30 @@ public class RecipeArea {
                 }
             }
         }
+        return true;
+    }
+
+    /**
+     * v3.2.x: GT programmed_circuit 系 (= {@code gtceu:programmed_circuit} 等) の slot で
+     * 右クリック時、 ItemStack の NBT {@code Configuration} を +1 (= 0..32 で wrap)。
+     * @return circuit と判定して処理した場合 true (= caller は通常の count++ をスキップ)
+     */
+    private boolean tryIncrementCircuit(int slotIndex, IngredientSpec current) {
+        IngredientSpec base = current.unwrap();
+        if (!(base instanceof IngredientSpec.Item it)) return false;
+        ItemStack stack = it.stack();
+        if (stack.isEmpty()) return false;
+        var key = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (key == null) return false;
+        String path = key.getPath();
+        // gtceu:programmed_circuit / gtceu:circuit / 派生 mod も含めて "circuit" 名で判定
+        if (!path.contains("programmed_circuit") && !path.equals("circuit")) return false;
+        ItemStack copy = stack.copy();
+        net.minecraft.nbt.CompoundTag tag = copy.getOrCreateTag();
+        int cur = tag.contains("Configuration") ? tag.getInt("Configuration") : 0;
+        int next = (cur + 1) % 33;  // GT は 0..32 を許容、 32 超で wrap
+        tag.putInt("Configuration", next);
+        draft.setSlot(slotIndex, new IngredientSpec.Item(copy));
         return true;
     }
 
@@ -740,7 +838,11 @@ public class RecipeArea {
         if (drawable == null) return -1;
         List<IRecipeSlotView> views = drawable.getRecipeSlotsView().getSlotViews();
         for (int i = 0; i < views.size(); i++) {
-            if (views.get(i) == target) return i;
+            if (views.get(i) == target) {
+                // v3.2.x: CATALYST role slot (= mod 固有の永続表示、 編集対象外) はクリック無効化
+                if (target.getRole() == mezz.jei.api.recipe.RecipeIngredientRole.CATALYST) return -1;
+                return i;
+            }
         }
         return -1;
     }

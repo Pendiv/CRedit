@@ -101,6 +101,8 @@
   "gui.credit.settings.clipboard.persistence.session.desc": "Kept until the game exits",
   "gui.credit.settings.clipboard.persistence.persistent.name": "Persistent",
   "gui.credit.settings.clipboard.persistence.persistent.desc": "Saved to config/credit-clipboard.dat, restored on restart",
+  "gui.credit.settings.chance.default_mille": "Default chance (per-thousand, 0-1000):",
+  "gui.credit.settings.chance.default_boost": "Default GT tier boost (0+):",
 
   "key.categories.credit": "Credit (CraftPattern)",
   "key.credit.open": "Open CraftPattern",
@@ -241,6 +243,8 @@
   "gui.credit.changed.tab_mod_title":    "Mod recipes (simplified)",
   "gui.credit.gt.conflict.head":         "[CraftPattern] WARN: GT recipe input conflicts with %s existing recipe(s):",
   "gui.credit.gt.conflict.hint":         "  → GT will reject one of them. Use Edit on the existing recipe to overwrite instead.",
+  "gui.credit.auto.fallback.skeleton":   "[CraftPattern] WARN: auto-support failed for %s. Skeleton fallback emitted (= no edit effect). Mod-specific emitter needed.",
+  "gui.credit.runtime.no_viewer":        "[CraftPattern] WARN: Neither JEI nor EMI is installed. Credit requires one of them as a recipe viewer. Features are disabled.",
 
   "gui.credit.import.conflict.title": "Credit — Resolve Import Conflicts",
   "gui.credit.import.conflict.summary": "Conflict %s / %s  (non-conflicting: %s, auto-accepted)",

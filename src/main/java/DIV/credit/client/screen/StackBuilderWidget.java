@@ -219,11 +219,34 @@ public class StackBuilderWidget {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
-        var gasStack = MekanismIngredientAdapter.toGasStack(gas);
-        if (gasStack.isEmpty()) return;
-        var type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+        // v3.3.x: chemicalType (gas/infusion/pigment/slurry) で renderer 系統分岐
+        Object stack;
+        mezz.jei.api.ingredients.IIngredientType<?> type;
+        switch (gas.chemicalType()) {
+            case GAS -> {
+                var st = MekanismIngredientAdapter.toGasStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+            }
+            case INFUSION -> {
+                var st = MekanismIngredientAdapter.toInfusionStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_INFUSION;
+            }
+            case PIGMENT -> {
+                var st = MekanismIngredientAdapter.toPigmentStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_PIGMENT;
+            }
+            case SLURRY -> {
+                var st = MekanismIngredientAdapter.toSlurryStack(gas);
+                if (st.isEmpty()) return;
+                stack = st; type = mekanism.client.jei.MekanismJEI.TYPE_SLURRY;
+            }
+            default -> { return; }
+        }
         var renderer = (mezz.jei.api.ingredients.IIngredientRenderer) rt.getIngredientManager().getIngredientRenderer(type);
-        renderer.render(g, gasStack, x, y);
+        renderer.render(g, stack, x, y);
     }
 
     public void renderTooltip(GuiGraphics g, Font font, int mouseX, int mouseY) {

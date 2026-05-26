@@ -80,6 +80,10 @@ public final class CreditConfig {
     public static final ForgeConfigSpec.BooleanValue CLIPBOARD_MULTI;
     public static final ForgeConfigSpec.EnumValue<ClipboardPersistence> CLIPBOARD_PERSISTENCE;
 
+    // ─── v3.2.x: GT / Create 確率 output の初期値 (右クリで CFG セットした時の default) ───
+    public static final ForgeConfigSpec.IntValue CHANCE_DEFAULT_MILLE;
+    public static final ForgeConfigSpec.IntValue CHANCE_DEFAULT_BOOST;
+
     // ─── v2.0.9 edit mode → category 切替時にグリッド内容保持するか ───
     public static final ForgeConfigSpec.BooleanValue PRESERVE_EDIT_GRID_ON_SWITCH;
 
@@ -205,6 +209,17 @@ public final class CreditConfig {
                 "SESSION: kept until game exits (default).",
                 "PERSISTENT: saved to <gameDir>/config/credit-clipboard.dat, restored on restart.")
             .defineEnum("clipboardPersistence", ClipboardPersistence.SESSION);
+        b.pop();
+
+        // v3.2.x: chance default
+        b.push("chance");
+        CHANCE_DEFAULT_MILLE = b.comment(
+                "Default chance (per-thousand) when right-clicking an output to apply GT_CHANCE / CREATE_CHANCE.",
+                "Range: 0..1000 (= 0%..100%). Default 1000 (= 100%).")
+            .defineInRange("chanceDefaultMille", 1000, 0, 1000);
+        CHANCE_DEFAULT_BOOST = b.comment(
+                "Default GT chance tier boost. Range: >= 0. Default 0.")
+            .defineInRange("chanceDefaultBoost", 0, 0, Integer.MAX_VALUE);
         b.pop();
 
         // v2.0.9 edit mode 終了時の grid 保持

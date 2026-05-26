@@ -172,6 +172,15 @@ public final class GTSupport {
     }
 
     private static boolean addItemOutput(GTRecipeBuilder b, DIV.credit.client.draft.IngredientSpec s) {
+        // v3.2.x: Configured + GT_CHANCE は b.chancedOutput(stack, chance×10, boost×10) で
+        // chance info を recipe に乗せる (= JEI が GT 純正の % overlay 描画してくれる)。
+        if (s instanceof DIV.credit.client.draft.IngredientSpec.Configured c
+            && c.opt() == DIV.credit.client.draft.IngredientSpec.ItemOption.GT_CHANCE
+            && c.base() instanceof DIV.credit.client.draft.IngredientSpec.Item it
+            && !it.stack().isEmpty()) {
+            b.chancedOutput(it.stack(), c.chanceMille() * 10, c.tierBoost() * 10);
+            return true;
+        }
         if (s instanceof DIV.credit.client.draft.IngredientSpec.Item it && !it.stack().isEmpty()) {
             b.outputItems(it.stack()); return true;
         }

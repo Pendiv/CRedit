@@ -30,6 +30,8 @@ public final class KeyInterceptor {
         Screen screen = event.getScreen();
         if (!(screen instanceof BuilderScreen)) return;
         if (!safeMaster()) return;
+        // v3.2.x: JEI 検索 bar が focus 中なら譲る (= cancel せず、 JEI listener が key を消費)
+        if (JeiSearchFocusHelper.isJeiSearchFocused()) return;
         try {
             screen.keyPressed(event.getKeyCode(), event.getScanCode(), event.getModifiers());
         } catch (Exception e) {
@@ -43,6 +45,7 @@ public final class KeyInterceptor {
         Screen screen = event.getScreen();
         if (!(screen instanceof BuilderScreen)) return;
         if (!safeMaster()) return;
+        if (JeiSearchFocusHelper.isJeiSearchFocused()) return;
         try {
             screen.keyReleased(event.getKeyCode(), event.getScanCode(), event.getModifiers());
         } catch (Exception ignored) {}

@@ -317,7 +317,14 @@ public final class MekanismKubeJSEmitter {
             return "Fluid.of('#" + ft.tagId() + "', " + ft.amount() + ")";
         }
         if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
-            return "Gas.of('" + g.gasId() + "', " + Math.max(1, g.amount()) + ")";
+            // v3.3.x: chemicalType で KubeJS Mek plugin API 名を切替
+            String api = switch (g.chemicalType()) {
+                case GAS      -> "Gas";
+                case INFUSION -> "InfuseType";
+                case PIGMENT  -> "Pigment";
+                case SLURRY   -> "Slurry";
+            };
+            return api + ".of('" + g.gasId() + "', " + Math.max(1, g.amount()) + ")";
         }
         return null;
     }
@@ -423,13 +430,22 @@ public final class MekanismKubeJSEmitter {
         return null;
     }
 
-    /** Mek GasStackIngredient JSON: { amount: N, gas: 'id' }。 */
+    /**
+     * Mek ChemicalStackIngredient JSON: {@code { amount: N, <key>: 'id' }}。
+     * <p>chemicalType に応じて key 名 (= gas / infuse_type / pigment / slurry) 切替。
+     */
     @Nullable
     private static String gasIngredientJson(IngredientSpec s) {
         if (s == null || s.isEmpty()) return null;
         IngredientSpec base = s.unwrap();
         if (base instanceof IngredientSpec.Gas g && g.gasId() != null) {
-            return "{ amount: " + g.amount() + ", gas: '" + g.gasId() + "' }";
+            String key = switch (g.chemicalType()) {
+                case GAS      -> "gas";
+                case INFUSION -> "infuse_type";
+                case PIGMENT  -> "pigment";
+                case SLURRY   -> "slurry";
+            };
+            return "{ amount: " + g.amount() + ", " + key + ": '" + g.gasId() + "' }";
         }
         return null;
     }

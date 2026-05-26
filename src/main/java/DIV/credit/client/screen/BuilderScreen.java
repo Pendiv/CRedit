@@ -519,6 +519,12 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
                 .withStyle(ChatFormatting.RED));
             return;
         }
+        // v3.3.x auto pipeline 失敗 (= skeleton fallback) を検出してユーザーに通知
+        if (code.contains(DIV.credit.client.draft.GenericDraft.SKELETON_MARKER)) {
+            chat(Component.translatable("gui.credit.auto.fallback.skeleton",
+                    draft.recipeType().getUid().toString())
+                .withStyle(ChatFormatting.YELLOW));
+        }
         // v2.2.0 immediate apply 判定: 該当 kind が即時適応対象なら staging を介さず直接書き込み
         if (DIV.credit.CreditConfig.shouldApplyImmediately(opKind)) {
             DIV.credit.client.io.ScriptWriter.DumpResult r =
@@ -601,6 +607,20 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
     }
 
     private String autoRecipeId(RecipeDraft draft) {
+        // v3.2.x: orig が credit:generated/... (= 過去 push で credit が作った recipe) を edit してる場合は
+        // 新 id にも **同じ id を流用** (= 上書き)。 KubeJS の remove-pass → add-pass 順で 「未存在の id を
+        // remove しても no-op → add で旧 + 新 共存」 になる累積 bug を回避。 安定 id だと
+        // 「remove で旧版消える → 同 id で add → 上書き成立」 になる。
+        if (editModeOrigId != null && editModeOrigId.startsWith(Credit.MODID + ":generated/")) {
+            return editModeOrigId;
+        }
+        // GT は edit 時 orig id を `credit:<catpath>/generated/recipe_X` 形式に変形してることがある
+        // (= 例: credit:cobblestone_refinder/generated/recipe_74989)。 この場合も「中身は credit 系」 なので
+        // 同 id 上書き経路に乗せる。
+        if (editModeOrigId != null && editModeOrigId.startsWith(Credit.MODID + ":")
+            && editModeOrigId.contains("/generated/")) {
+            return editModeOrigId;
+        }
         // v3.0.1: outputItemPath() → autoIdPath() に変更。
         // Cooking / Stonecutting 等 同 output で並立し得る draft が type / input 込み path を返すことで
         // RecipeIdResolver の _2 fallback に頼らずとも衝突を回避する。
@@ -1532,7 +1552,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         for (EditBox box : numericBoxes) {
             if (box.isFocused()) return true;
         }
-        return tagBar.isEditBoxFocused() || stackBuilder.isEditBoxFocused();
+        if (tagBar.isEditBoxFocused() || stackBuilder.isEditBoxFocused()) return true;
+        // v3.2.x: JEI 検索 bar focus も「text field 入力中」 扱い (= 特殊キー混線回避)
+        return DIV.credit.client.input.JeiSearchFocusHelper.isJeiSearchFocused();
     }
 
     @Override

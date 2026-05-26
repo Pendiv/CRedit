@@ -55,7 +55,16 @@ public interface IngredientSpec {
     record Configured(IngredientSpec base, ItemOption opt, int chanceMille, int tierBoost)
             implements IngredientSpec {
         public Configured(IngredientSpec base, ItemOption opt) {
-            this(base, opt, 1000, 0);
+            this(base, opt, defaultChanceMille(), defaultBoost());
+        }
+        /** v3.2.x: CreditConfig から読む default chance (= 1000 = 100%)。 config 未 init 環境では 1000。 */
+        private static int defaultChanceMille() {
+            try { return DIV.credit.CreditConfig.CHANCE_DEFAULT_MILLE.get(); }
+            catch (Exception e) { return 1000; }
+        }
+        private static int defaultBoost() {
+            try { return DIV.credit.CreditConfig.CHANCE_DEFAULT_BOOST.get(); }
+            catch (Exception e) { return 0; }
         }
         @Override public boolean isEmpty()       { return base.isEmpty(); }
         @Override public int     count()         { return base.count(); }
@@ -99,9 +108,18 @@ public interface IngredientSpec {
         @Override public int     maxCount()      { return 64_000; }
     }
 
-    /** Mekanism Gas (mB)。Mek クラスを直接持たないよう registry id + amount のみ保持。 */
-    record Gas(ResourceLocation gasId, int amount) implements IngredientSpec {
-        public Gas(ResourceLocation gasId) { this(gasId, 1000); }
+    /** Mekanism chemical 種別 (= GAS/INFUSION/PIGMENT/SLURRY)。 Gas record の chemicalType field で識別。 */
+    enum ChemicalType { GAS, INFUSION, PIGMENT, SLURRY }
+
+    /**
+     * Mekanism chemical (mB)。 Mek クラスを直接持たないよう registry id + amount + chemicalType のみ保持。
+     * <p>chemicalType は 4 種 (= Gas / Infusion / Pigment / Slurry) を識別。 旧 2-arg ctor は GAS 既定で
+     * back-compat。 record 名は歴史的経緯で Gas のままだが「chemical 全般を表す」 と読む。
+     * <p>SlotKind は GAS_INPUT/OUTPUT を 4 種共用 (= slot 構造を膨らませない)、 各値の type で区別。
+     */
+    record Gas(ResourceLocation gasId, int amount, ChemicalType chemicalType) implements IngredientSpec {
+        public Gas(ResourceLocation gasId, int amount) { this(gasId, amount, ChemicalType.GAS); }
+        public Gas(ResourceLocation gasId)             { this(gasId, 1000,  ChemicalType.GAS); }
         @Override public boolean isEmpty()       { return gasId == null; }
         @Override public int     count()         { return amount; }
         @Override public int     incrementStep() { return 100; }
@@ -132,7 +150,22 @@ public interface IngredientSpec {
 
     static IngredientSpec ofGas(ResourceLocation gasId, int amount) {
         if (gasId == null) return EMPTY;
-        return new Gas(gasId, Math.max(1, amount));
+        return new Gas(gasId, Math.max(1, amount), ChemicalType.GAS);
+    }
+
+    static IngredientSpec ofInfusion(ResourceLocation id, int amount) {
+        if (id == null) return EMPTY;
+        return new Gas(id, Math.max(1, amount), ChemicalType.INFUSION);
+    }
+
+    static IngredientSpec ofPigment(ResourceLocation id, int amount) {
+        if (id == null) return EMPTY;
+        return new Gas(id, Math.max(1, amount), ChemicalType.PIGMENT);
+    }
+
+    static IngredientSpec ofSlurry(ResourceLocation id, int amount) {
+        if (id == null) return EMPTY;
+        return new Gas(id, Math.max(1, amount), ChemicalType.SLURRY);
     }
 
     static IngredientSpec withCount(IngredientSpec s, int newCount) {
@@ -158,7 +191,7 @@ public interface IngredientSpec {
             return new FluidTag(ft.tagId(), n);
         }
         if (s instanceof Gas g && g.gasId() != null) {
-            return new Gas(g.gasId(), n);
+            return new Gas(g.gasId(), n, g.chemicalType());
         }
         return s;
     }

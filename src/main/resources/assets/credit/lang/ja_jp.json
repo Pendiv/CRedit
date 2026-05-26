@@ -101,6 +101,8 @@
   "gui.credit.settings.clipboard.persistence.session.desc": "ゲーム終了まで履歴を保持",
   "gui.credit.settings.clipboard.persistence.persistent.name": "永続保存",
   "gui.credit.settings.clipboard.persistence.persistent.desc": "プレイヤーデータに保存、 ゲーム再起動後も復元",
+  "gui.credit.settings.chance.default_mille": "確率の初期値 (1000分率、 0-1000):",
+  "gui.credit.settings.chance.default_boost": "GT tier boost の初期値 (0+):",
 
   "key.categories.credit": "Credit (CraftPattern)",
   "key.credit.open": "CraftPattern を開く",
@@ -242,6 +244,8 @@
   "gui.credit.changed.tab_mod_title":    "Modレシピ (簡易表示)",
   "gui.credit.gt.conflict.head":         "[CraftPattern] WARN: GT recipe の入力が既存 %s 件と一致:",
   "gui.credit.gt.conflict.hint":         "  → GT が片方を reject します。 上書きしたい場合は既存を「編集」 してください。",
+  "gui.credit.auto.fallback.skeleton":   "[CraftPattern] WARN: %s の auto 対応に失敗。 skeleton fallback (= 編集効果なし) で出力されました。 mod 固有 emitter 追加が必要です。",
+  "gui.credit.runtime.no_viewer":        "[CraftPattern] WARN: JEI も EMI もインストールされていません。 credit は recipe viewer (JEI or EMI) のどちらかを必要とします。 機能が停止しています。",
 
   "gui.credit.import.conflict.title": "Credit — Import 重複の解消",
   "gui.credit.import.conflict.summary": "重複 %s / %s  (重複なし: %s 件は自動採用)",

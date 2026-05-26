@@ -131,7 +131,9 @@ public final class Clipboard {
             return java.util.Objects.equals(aft.tagId(), bft.tagId()) && aft.amount() == bft.amount();
         }
         if (au instanceof IngredientSpec.Gas ag && bu instanceof IngredientSpec.Gas bg) {
-            return java.util.Objects.equals(ag.gasId(), bg.gasId()) && ag.amount() == bg.amount();
+            return java.util.Objects.equals(ag.gasId(), bg.gasId())
+                && ag.amount() == bg.amount()
+                && ag.chemicalType() == bg.chemicalType();
         }
         return false;
     }

@@ -97,9 +97,17 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
             return IngredientSpec.ofFluid(fs);
         }
         if (HAS_MEK) {
-            IngredientSpec gasSpec = DIV.credit.client.jei.mek.MekanismIngredientAdapter.tryGas(type, value);
-            if (gasSpec instanceof IngredientSpec.Gas g && g.gasId() != null) {
-                return IngredientSpec.ofGas(g.gasId(), DIV.credit.CreditConfig.GAS_DEFAULT_AMOUNT.get());
+            // v3.3.x: 4 種 chemical (gas/infusion/pigment/slurry) を統一判別
+            IngredientSpec chem = DIV.credit.client.jei.mek.MekanismIngredientAdapter.tryChemical(type, value);
+            if (chem instanceof IngredientSpec.Gas g && g.gasId() != null) {
+                int amt = DIV.credit.CreditConfig.GAS_DEFAULT_AMOUNT.get();
+                // chemicalType を維持しつつ default amount に正規化
+                return switch (g.chemicalType()) {
+                    case GAS      -> IngredientSpec.ofGas(g.gasId(), amt);
+                    case INFUSION -> IngredientSpec.ofInfusion(g.gasId(), amt);
+                    case PIGMENT  -> IngredientSpec.ofPigment(g.gasId(), amt);
+                    case SLURRY   -> IngredientSpec.ofSlurry(g.gasId(), amt);
+                };
             }
         }
         return IngredientSpec.EMPTY;
