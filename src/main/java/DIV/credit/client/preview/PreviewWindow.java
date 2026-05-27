@@ -1,7 +1,5 @@
 package DIV.credit.client.preview;
 
-import DIV.credit.Credit;
-import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -38,18 +36,17 @@ public class PreviewWindow implements Renderable, GuiEventListener, NarratableEn
     private static final int CLOSE_NORMAL = 0xFFA0A0A0;
 
     private final Component title;
-    private final IRecipeLayoutDrawable<?> drawable;
+    private final PreviewRenderable renderable;
     private int windowX, windowY;
     private final int windowW, windowH;
     private final int innerX, innerY;
     private boolean focused = false;
 
-    public PreviewWindow(Component title, IRecipeLayoutDrawable<?> drawable) {
+    public PreviewWindow(Component title, PreviewRenderable renderable) {
         this.title = title;
-        this.drawable = drawable;
-        Rect2i rect = drawable.getRectWithBorder();
-        this.windowW = rect.getWidth() + PADDING * 2;
-        this.windowH = rect.getHeight() + TITLE_BAR_H + PADDING * 2;
+        this.renderable = renderable;
+        this.windowW = renderable.getWidth()  + PADDING * 2;
+        this.windowH = renderable.getHeight() + TITLE_BAR_H + PADDING * 2;
         this.innerX  = PADDING;
         this.innerY  = TITLE_BAR_H + PADDING;
     }
@@ -57,7 +54,7 @@ public class PreviewWindow implements Renderable, GuiEventListener, NarratableEn
     public void setPosition(int x, int y) {
         this.windowX = x;
         this.windowY = y;
-        drawable.setPosition(x + innerX, y + innerY);
+        renderable.setPosition(x + innerX, y + innerY);
     }
 
     public int getWidth()  { return windowW; }
@@ -99,13 +96,8 @@ public class PreviewWindow implements Renderable, GuiEventListener, NarratableEn
         int closeColor = isCloseHovered(mouseX, mouseY) ? CLOSE_HOVER : CLOSE_NORMAL;
         g.drawString(font, "✕", closeR.getX() + 1, closeR.getY(), closeColor, false);
 
-        // 5. JEI drawable: tick → drawRecipe → drawOverlays
-        try { drawable.tick(); }
-        catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] PreviewWindow.tick failed: {}", e.getMessage()); }
-        try { drawable.drawRecipe(g, mouseX, mouseY); }
-        catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] PreviewWindow.drawRecipe failed: {}", e.getMessage()); }
-        try { drawable.drawOverlays(g, mouseX, mouseY); }
-        catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] PreviewWindow.drawOverlays failed: {}", e.getMessage()); }
+        // 5. inner renderable (= JEI or EMI 抽象) を描画
+        renderable.render(g, mouseX, mouseY, partialTick);
     }
 
     @Override

@@ -297,7 +297,7 @@ public class TagBar {
                     .forEach(tk -> out.add(tk.location()));
             }
         } catch (Exception e) {
-            DIV.credit.Credit.LOGGER.warn("[CraftPattern] collectTags failed", e);
+            DIV.credit.Credit.LOGGER.warn("[C7003] collectTags failed", e);
         }
         // 重複除去 + ソート
         java.util.LinkedHashSet<ResourceLocation> dedup = new java.util.LinkedHashSet<>(out);

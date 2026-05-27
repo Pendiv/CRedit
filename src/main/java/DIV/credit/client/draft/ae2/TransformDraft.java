@@ -82,7 +82,7 @@ public final class TransformDraft implements RecipeDraft {
                 slotCount, inputCount, catalystIdx, outIdx);
             return new TransformDraft(cat.getRecipeType(), slotCount, inputCount, catalystIdx, outIdx);
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] TransformDraft probe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4012] TransformDraft probe failed: {}", e.toString());
             return new TransformDraft(cat.getRecipeType(), 4, 2, 2, 3);
         }
     }
@@ -139,7 +139,7 @@ public final class TransformDraft implements RecipeDraft {
             if (recipe != null) tryReadCircumstance(recipe);
             return true;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] TransformDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4013] TransformDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

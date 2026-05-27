@@ -104,8 +104,8 @@ public class CraftPatternCommand {
         try {
             captureLayout(typeOpt.get(), manager, builder, empty);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] setRecipe threw", e);
-            chat(Component.literal("[CraftPattern] setRecipe threw: " + e.getClass().getSimpleName() + " — " + e.getMessage())
+            Credit.LOGGER.error("[C8001] setRecipe threw", e);
+            chat(Component.literal("[C8001] setRecipe threw: " + e.getClass().getSimpleName() + " — " + e.getMessage())
                 .withStyle(ChatFormatting.RED));
             return 0;
         }

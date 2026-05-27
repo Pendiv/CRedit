@@ -105,7 +105,7 @@ public final class ExtremeSmithingDraft implements RecipeDraft {
             }
             return true;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] ExtremeSmithingDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4011] ExtremeSmithingDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

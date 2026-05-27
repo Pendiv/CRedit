@@ -52,7 +52,7 @@ public final class LearnedSchemaCache {
             }
             Credit.LOGGER.info("[CraftPattern] LearnedSchemaCache load {} entries", CACHE.size());
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] LearnedSchemaCache load failed: {}", e.toString());
+            Credit.LOGGER.warn("[C5004] LearnedSchemaCache load failed: {}", e.toString());
         }
     }
 
@@ -62,7 +62,7 @@ public final class LearnedSchemaCache {
             for (var e : CACHE.entrySet()) obj.addProperty(e.getKey(), e.getValue());
             Files.writeString(path(), GSON.toJson(obj));
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] LearnedSchemaCache save failed: {}", e.toString());
+            Credit.LOGGER.warn("[C5005] LearnedSchemaCache save failed: {}", e.toString());
         }
     }
 

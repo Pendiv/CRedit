@@ -104,7 +104,7 @@ public final class InscriberDraft implements RecipeDraft {
             if (recipe != null) tryReadMode(recipe);
             return true;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] InscriberDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4010] InscriberDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

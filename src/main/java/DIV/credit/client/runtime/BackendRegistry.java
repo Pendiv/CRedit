@@ -84,6 +84,6 @@ public final class BackendRegistry {
                 return;
             }
         }
-        Credit.LOGGER.warn("[CraftPattern] BackendRegistry: setActive({}) — not available", id);
+        Credit.LOGGER.warn("[C902] BackendRegistry: setActive({}) — not available", id);
     }
 }

@@ -68,7 +68,7 @@ public final class RecipeIdResolver {
                  .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".js"))
                  .forEach(p -> collectFromFile(p, ids));
             } catch (IOException e) {
-                Credit.LOGGER.warn("[CraftPattern] id collect walk failed: {}", e.getMessage());
+                Credit.LOGGER.warn("[C404] id collect walk failed: {}", e.getMessage());
             }
         }
         return ids;

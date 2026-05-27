@@ -37,7 +37,7 @@ public final class EditHandler {
         RecipeDraft draft = store.getOrCreate(category);
         if (draft == null) {
             chat(Component.translatable("gui.credit.edit.load_failed").withStyle(ChatFormatting.RED));
-            Credit.LOGGER.warn("[CraftPattern] EDIT: DraftStore returned null for {}",
+            Credit.LOGGER.warn("[C701] EDIT: DraftStore returned null for {}",
                 category.getRecipeType().getUid());
             return;
         }
@@ -45,7 +45,7 @@ public final class EditHandler {
         try {
             ok = draft.loadFromRecipe(layout);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] EDIT: loadFromRecipe threw", e);
+            Credit.LOGGER.error("[C7002] EDIT: loadFromRecipe threw", e);
             ok = false;
         }
         if (!ok) {

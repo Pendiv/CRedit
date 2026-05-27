@@ -91,7 +91,7 @@ public class GTCompressorDraft implements RecipeDraft {
                 jeiType.getUid(), loaded, n);
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GTCompressorDraft.loadFromRecipe failed for {}: {}",
+            Credit.LOGGER.warn("[C4019] GTCompressorDraft.loadFromRecipe failed for {}: {}",
                 jeiType.getUid(), e.toString());
             return false;
         }

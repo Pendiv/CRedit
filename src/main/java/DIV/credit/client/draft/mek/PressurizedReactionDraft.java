@@ -122,7 +122,7 @@ public class PressurizedReactionDraft implements RecipeDraft {
                 jeiType.getUid(), loaded, n);
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] PressurizedReactionDraft.loadFromRecipe failed for {}: {}",
+            Credit.LOGGER.warn("[C4023] PressurizedReactionDraft.loadFromRecipe failed for {}: {}",
                 jeiType.getUid(), e.toString());
             return false;
         }
@@ -166,7 +166,7 @@ public class PressurizedReactionDraft implements RecipeDraft {
                 outItemForRecipe,
                 outGasForRecipe);
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] PressurizedReactionDraft toRecipeInstance failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4024] PressurizedReactionDraft toRecipeInstance failed: {}", e.toString());
             return null; // fallback to existing recipe
         }
     }

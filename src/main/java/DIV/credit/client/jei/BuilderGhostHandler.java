@@ -56,7 +56,7 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
         } catch (Throwable t) {
             // dev runtime で稀に SecureJar が inner class を見失う問題への防御。
             // ターゲット列挙だけ skip して残り (StackBuilder/CFG/Result) は試行する。
-            Credit.LOGGER.error("[CraftPattern] ghost slot target enumeration failed; skipping recipe slots", t);
+            Credit.LOGGER.error("[C2013] BuilderGhostHandler: ghost slot target enumeration failed; skipping recipe slots", t);
         }
         // StackBuilder helper widget も drop ターゲットに（item/fluid/gas 全部受け入れ）
         Rect2i sbArea = gui.getStackBuilderArea();
@@ -100,8 +100,11 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
             // v3.3.x: 4 種 chemical (gas/infusion/pigment/slurry) を統一判別
             IngredientSpec chem = DIV.credit.client.jei.mek.MekanismIngredientAdapter.tryChemical(type, value);
             if (chem instanceof IngredientSpec.Gas g && g.gasId() != null) {
-                int amt = DIV.credit.CreditConfig.GAS_DEFAULT_AMOUNT.get();
-                // chemicalType を維持しつつ default amount に正規化
+                // chemicalType 別に default amount 取得 (= infusion は別 config、 他は GAS_DEFAULT_AMOUNT 流用)
+                int amt = switch (g.chemicalType()) {
+                    case INFUSION -> DIV.credit.CreditConfig.INFUSION_DEFAULT_AMOUNT.get();
+                    default       -> DIV.credit.CreditConfig.GAS_DEFAULT_AMOUNT.get();
+                };
                 return switch (g.chemicalType()) {
                     case GAS      -> IngredientSpec.ofGas(g.gasId(), amt);
                     case INFUSION -> IngredientSpec.ofInfusion(g.gasId(), amt);

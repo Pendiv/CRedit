@@ -67,6 +67,13 @@ public interface CreditRuntimeBackend {
     /** screen 座標下の ingredient を返す (= viewer panel 上の ingredient のみ)。 無ければ null。 */
     @Nullable IngredientSpec hoveredIngredient(int mouseX, int mouseY);
 
+    /**
+     * viewer が画面下端で占有する領域の上端 Y を返す (= credit UI はこの Y より上に配置すべき)。
+     * 例: EMI は検索 bar の上端 Y、 JEI は下端占有なしなので {@code screenHeight} そのまま。
+     * <p>BuilderScreen の inventory 位置決めに利用。 default は screenHeight (= 反映なし)。
+     */
+    default int getBottomReservedTopY(int screenHeight) { return screenHeight; }
+
     // ──────────────── Navigation ────────────────
 
     /** spec を生み出す recipe 群を viewer で表示 (= JEI showRecipes / EMI displayRecipes)。 */
@@ -74,6 +81,29 @@ public interface CreditRuntimeBackend {
 
     /** spec を消費する recipe 群を viewer で表示 (= JEI showUses / EMI displayUses)。 */
     void showUsesOf(IngredientSpec spec);
+
+    /**
+     * category UID 指定で viewer を開く。 成功時 true。 viewer 不在 / category 未登録時 false。
+     * BuilderScreen の category tab から「現 category を JEI で開く」 等の遷移で使う。
+     */
+    default boolean openCategoryByUid(ResourceLocation uid) { return false; }
+
+    /**
+     * recipe ID 指定で viewer を開く (= 特定 recipe を viewer で focus 表示)。
+     * @param recipeId      target recipe ID
+     * @param categoryHint  GT 等で category prefix 推測に使う category UID。 null 可
+     * @return 成功時 true
+     */
+    default boolean openRecipeId(ResourceLocation recipeId, @Nullable String categoryHint) { return false; }
+
+    /**
+     * Mek chemical (= Gas/Infusion/Pigment/Slurry) を screen 上の (x, y) 位置に描画。
+     * <p>JeiBackend は Mek の JEI ingredient renderer に delegate、 EmiBackend は EMI 経路 (= Phase 4+ で実装)。
+     * Mek 未 load / chemical 未認識時は noop。
+     */
+    default void renderChemical(net.minecraft.client.gui.GuiGraphics g,
+                                DIV.credit.client.draft.IngredientSpec.Gas chemical,
+                                int x, int y) {}
 
     // ──────────────── 拡張 (Phase 2 以降で実装が増える可能性) ────────────────
 

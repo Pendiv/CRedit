@@ -21,7 +21,7 @@ apply plugin: 'org.spongepowered.mixin'
 ext.credit = [
         mod_id                 : 'credit',
         mod_name               : 'credit',
-        mod_version            : '3.2.2',
+        mod_version            : '4.0.0',
         mod_group_id           : 'DIV',
         mod_license            : 'MIT',
         mod_authors            : '',
@@ -99,11 +99,11 @@ minecraft {
     }
 }
 
-// v3.2.x: credit は mixin classes 0 個。 config 登録外す (= 新規 dep の strict Mixin 版で
-//   empty config が parse error 起こす対策)。 refmap 生成も不要だが mixin{} block 自体は
-//   無いと processResources の token replace で参照されるため最小形で残す。
+// v3.3.x: EMI「+」 button mixin (EmiRecipeFillerMixin) で credit.mixins.json に実 class entry
+//   入ったので config 登録復活。 v3.2.x の empty config crash は実 entry あれば回避される。
 mixin {
     add sourceSets.main, "${credit.mod_id}.refmap.json"
+    config "${credit.mod_id}.mixins.json"
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }

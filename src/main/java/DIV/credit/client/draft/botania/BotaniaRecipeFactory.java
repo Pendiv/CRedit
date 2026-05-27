@@ -62,7 +62,7 @@ public final class BotaniaRecipeFactory {
                 default -> null;
             };
         } catch (Throwable t) {
-            Credit.LOGGER.warn("[CraftPattern] BotaniaRecipeFactory build failed for {}: {}", jeiUid, t.toString());
+            Credit.LOGGER.warn("[C4007] BotaniaRecipeFactory build failed for {}: {}", jeiUid, t.toString());
             return null;
         }
     }
@@ -221,7 +221,7 @@ public final class BotaniaRecipeFactory {
             c.setAccessible(true);
             return c;
         } catch (Throwable t) {
-            Credit.LOGGER.warn("[CraftPattern] BotaniaRecipeFactory ctor lookup failed for {}: {}", cls.getName(), t.toString());
+            Credit.LOGGER.warn("[C4008] BotaniaRecipeFactory ctor lookup failed for {}: {}", cls.getName(), t.toString());
             return null;
         }
     }

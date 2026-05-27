@@ -1,6 +1,7 @@
 package DIV.credit.client.preview;
 
 import DIV.credit.Credit;
+import DIV.credit.jei.CraftPatternJeiPlugin;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.ChatFormatting;
@@ -23,7 +24,13 @@ public final class PreviewBus {
 
     private PreviewBus() {}
 
-    /** 主 entry point。 user-facing なので chat 通知あり。 */
+    /**
+     * 主 entry point。 user-facing なので chat 通知あり。
+     *
+     * <p>v3.4.x: JEI を base 経路 (= mandatory)。 EMI viewer 経路は
+     * {@code CreditConfig.EMI_VIEWER_INTEGRATION} が ON + EMI 在 + JEI 経路失敗時 fallback。
+     * 通常運用では JEI 経路で常に成功する想定。
+     */
     public static void show(PreviewSource source) {
         if (source == null) { notifyFail("PreviewSource is null"); return; }
 
@@ -32,19 +39,45 @@ public final class PreviewBus {
             notifyFail("category 解決失敗: " + safeLabel(source));
             return;
         }
-        Object recipe = source.getRecipeObject();
-        if (recipe == null) {
-            notifyFail("recipe 合成失敗: " + safeLabel(source));
-            return;
-        }
-        IRecipeLayoutDrawable<?> drawable = JeiRenderBridge.build(category, recipe);
-        if (drawable == null) {
-            notifyFail("drawable 生成失敗: " + safeLabel(source));
-            return;
-        }
         Component label = source.getLabel();
         if (label == null) label = Component.literal("untitled preview");
-        PreviewWindowManager.INSTANCE.open(label, drawable);
+
+        // 1. JEI path (= base、 通常ここで成功)
+        if (isJeiReady()) {
+            Object recipe = source.getRecipeObject();
+            if (recipe != null) {
+                IRecipeLayoutDrawable<?> drawable = JeiRenderBridge.build(category, recipe);
+                if (drawable != null) {
+                    PreviewWindowManager.INSTANCE.open(label, new JeiPreviewRenderable(drawable));
+                    return;
+                }
+                Credit.LOGGER.info("[CraftPattern] PreviewBus: JEI drawable build failed, trying EMI fallback");
+            } else {
+                Credit.LOGGER.info("[CraftPattern] PreviewBus: recipe object null, trying EMI fallback");
+            }
+        }
+
+        // 2. EMI fallback (= EMI 在 + viewer integration ON 時のみ)
+        if (DIV.credit.CreditConfig.isEmiIntegrationEnabled()
+            && source instanceof DraftPreviewSource dps) {
+            try {
+                PreviewRenderable emi = DIV.credit.client.runtime.emi.EmiPreviewBridge.build(
+                    dps.getDraft(), category);
+                if (emi != null) {
+                    PreviewWindowManager.INSTANCE.open(label, emi);
+                    return;
+                }
+            } catch (Throwable t) {
+                Credit.LOGGER.warn("[C3007] PreviewBus EMI path threw: {}", t.toString());
+            }
+        }
+
+        notifyFail("preview 構築失敗: " + safeLabel(source));
+    }
+
+    private static boolean isJeiReady() {
+        try { return CraftPatternJeiPlugin.runtime != null; }
+        catch (Throwable t) { return false; }
     }
 
     /** 失敗時の user 通知。 chat + log。 */

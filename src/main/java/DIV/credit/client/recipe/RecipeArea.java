@@ -130,7 +130,7 @@ public class RecipeArea {
                 currentMode = (drawable != null) ? "READONLY" : "EMPTY";
             }
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] Failed to create drawable for {}",
+            Credit.LOGGER.error("[C4025] Failed to create drawable for {}",
                 category.getRecipeType().getUid(), e);
             statusMessage = "Error: " + e.getClass().getSimpleName();
             return;
@@ -263,7 +263,7 @@ public class RecipeArea {
             OVERLAY_FIELD = cls.getDeclaredField("overlay");
             OVERLAY_FIELD.setAccessible(true);
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] Cannot access RecipeSlot fields via reflection: {}", e.toString());
+            Credit.LOGGER.warn("[C4026] Cannot access RecipeSlot fields via reflection: {}", e.toString());
         }
     }
 

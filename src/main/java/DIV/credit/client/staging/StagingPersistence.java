@@ -46,7 +46,7 @@ public final class StagingPersistence {
             }
             NbtIo.writeCompressed(root, f);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] staging save error", e);
+            Credit.LOGGER.error("[C5016] staging save error", e);
         }
     }
 
@@ -64,7 +64,7 @@ public final class StagingPersistence {
             StagingArea.INSTANCE.replaceAll(restored);
             Credit.LOGGER.info("[CraftPattern] Loaded {} staged change(s) from {}", restored.size(), f);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] staging load error", e);
+            Credit.LOGGER.error("[C5017] staging load error", e);
         }
     }
 }

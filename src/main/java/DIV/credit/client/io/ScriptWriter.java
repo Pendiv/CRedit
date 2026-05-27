@@ -163,7 +163,7 @@ public final class ScriptWriter {
             }
             return appendIntoExisting(target, op, modid, code, imported);
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] {} write IO error", op, e);
+            Credit.LOGGER.error("[C5006] {} write IO error", op, e);
             return new DumpResult.Failure("IO error: " + e.getMessage());
         }
     }

@@ -1,7 +1,6 @@
 package DIV.credit.client.preview;
 
 import DIV.credit.Credit;
-import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -29,8 +28,8 @@ public final class PreviewWindowManager {
 
     // ─── public API (PreviewBus から呼ばれる) ───
 
-    public void open(Component title, IRecipeLayoutDrawable<?> drawable) {
-        PreviewWindow win = new PreviewWindow(title, drawable);
+    public void open(Component title, PreviewRenderable renderable) {
+        PreviewWindow win = new PreviewWindow(title, renderable);
         windows.add(win);
         repositionAll();
         ensureHostScreen();

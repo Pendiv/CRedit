@@ -95,7 +95,7 @@ public final class CompressorDraft implements RecipeDraft {
             }
             return true;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] CompressorDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4009] CompressorDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }
@@ -138,12 +138,9 @@ public final class CompressorDraft implements RecipeDraft {
             return null;
         }
 
-        // output が Singularity (avaritia:singularity) の場合は対応外
         ResourceLocation resRl = BuiltInRegistries.ITEM.getKey(resIt.stack().getItem());
-        if (SINGULARITY_ID.equals(resRl)) {
-            Credit.LOGGER.warn("[CraftPattern] CompressorDraft.emit: output is Singularity, not supported in v2.1");
-            return null;
-        }
+        // v3.3.x: Singularity (= avaritia:singularity + Material NBT) 対応復活。
+        //   旧 v2.1 で skip してたが、 NBT 出力対応で正常 emit 可能化。
 
         StringBuilder sb = new StringBuilder();
         sb.append("    event.custom({\n");
@@ -151,11 +148,21 @@ public final class CompressorDraft implements RecipeDraft {
         sb.append("        ingredient: ").append(AE2EmitHelper.ingredientJson(input)).append(",\n");
         sb.append("        result: { item: '").append(resRl).append("'");
         if (resIt.stack().getCount() > 1) sb.append(", count: ").append(resIt.stack().getCount());
+        // NBT が有る場合 (= Singularity の Material 等) は nbt field に SNBT 文字列で出力
+        net.minecraft.nbt.CompoundTag tag = resIt.stack().getTag();
+        if (tag != null && !tag.isEmpty()) {
+            sb.append(", nbt: '").append(escapeNbtForSingleQuote(tag.toString())).append("'");
+        }
         sb.append(" }");
         if (inputCount.isPresent()) sb.append(",\n        inputCount: ").append(inputCount.get());
         if (timeCost.isPresent())   sb.append(",\n        timeCost: ").append(timeCost.get());
         sb.append("\n    }).id('").append(recipeId).append("');\n");
         return sb.toString();
+    }
+
+    /** SNBT を JS 単引用符文字列に埋め込み可能化 (= ' と \ を escape)。 */
+    private static String escapeNbtForSingleQuote(String snbt) {
+        return snbt.replace("\\", "\\\\").replace("'", "\\'");
     }
 
     @Override

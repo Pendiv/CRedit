@@ -46,7 +46,7 @@ public final class HistoryPersistence {
             }
             NbtIo.writeCompressed(root, f);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] history save error", e);
+            Credit.LOGGER.error("[C5009] history save error", e);
         }
     }
 
@@ -64,7 +64,7 @@ public final class HistoryPersistence {
             HistoryStore.INSTANCE.replaceAll(restored);
             Credit.LOGGER.info("[CraftPattern] Loaded {} history entries from {}", restored.size(), f);
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] history load error", e);
+            Credit.LOGGER.error("[C5010] history load error", e);
         }
     }
 }

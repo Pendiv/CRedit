@@ -197,7 +197,7 @@ public final class CreditCommand {
                 c.kind, c.modid, c.recipeId, filePath, success, c.jeiCategoryUid));
             if (!success) {
                 fail++;
-                Credit.LOGGER.warn("[CraftPattern] push: {} {} → FAILED ({})", c.kind, c.recipeId, r.message());
+                Credit.LOGGER.warn("[C801] push: {} {} → FAILED ({})", c.kind, c.recipeId, r.message());
             } else {
                 ok++;
                 Credit.LOGGER.info("[CraftPattern] push: {} {} → {}", c.kind, c.recipeId, r.message());

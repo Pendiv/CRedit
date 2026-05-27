@@ -156,7 +156,7 @@ public final class AvaritiaCraftingDraft implements RecipeDraft {
             }
             return true;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] AvaritiaCraftingDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4001] AvaritiaCraftingDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

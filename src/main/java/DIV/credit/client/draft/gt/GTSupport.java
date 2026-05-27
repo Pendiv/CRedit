@@ -122,7 +122,7 @@ public final class GTSupport {
                         .getByNameOrDefault(cleanroomName);
                     b.cleanroom(ctType);
                 } catch (Throwable e) {
-                    Credit.LOGGER.warn("[CraftPattern] cleanroom inject failed for {}: {}", cleanroomName, e.toString());
+                    Credit.LOGGER.warn("[C4020] cleanroom inject failed for {}: {}", cleanroomName, e.toString());
                 }
             }
             // slots 込み構築 (= preview 真 drawable 用)
@@ -142,7 +142,7 @@ public final class GTSupport {
                             default -> {}  // GAS は GT 範囲外
                         }
                     } catch (Exception slotEx) {
-                        Credit.LOGGER.warn("[CraftPattern] GT slot[{}] {} apply failed: {}",
+                        Credit.LOGGER.warn("[C4021] GT slot[{}] {} apply failed: {}",
                             i, k, slotEx.getMessage());
                     }
                 }
@@ -151,7 +151,7 @@ public final class GTSupport {
             }
             return b.buildRawRecipe();
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GT recipe build failed for {}: {}",
+            Credit.LOGGER.warn("[C4022] GT recipe build failed for {}: {}",
                 jeiUid, e.toString());
             return null;
         }

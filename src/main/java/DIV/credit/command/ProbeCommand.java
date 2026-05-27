@@ -45,12 +45,15 @@ import java.util.Optional;
  * GTRecipe や Mek recipe の data field 構造、condition、slot 定義を一気に把握するための診断ツール。
  * 「コイル温度の key 名は何？」「solder_multiplier は実際 data に入ってる？」みたいな調査に使う。
  */
-@Mod.EventBusSubscriber(modid = Credit.MODID, value = Dist.CLIENT)
+/**
+ * v3.3.x: 旧 @SubscribeEvent 経由 /craftpattern_probe 削除。 /credit dev probe 配下に統合。
+ * {@link CreditCommand} から {@link #SUGGEST_TYPES} と {@link #execute} を参照。
+ */
 public class ProbeCommand {
 
     private static final int MAX_SAMPLES = 5;
 
-    private static final SuggestionProvider<CommandSourceStack> SUGGEST_TYPES = (ctx, builder) -> {
+    public static final SuggestionProvider<CommandSourceStack> SUGGEST_TYPES = (ctx, builder) -> {
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt != null) {
             rt.getJeiHelpers().getAllRecipeTypes()
@@ -61,16 +64,7 @@ public class ProbeCommand {
         return builder.buildFuture();
     };
 
-    @SubscribeEvent
-    public static void onRegister(RegisterClientCommandsEvent event) {
-        LiteralArgumentBuilder<CommandSourceStack> probe = Commands.literal("craftpattern_probe")
-            .then(Commands.argument("type", StringArgumentType.greedyString())
-                .suggests(SUGGEST_TYPES)
-                .executes(ProbeCommand::execute));
-        event.getDispatcher().register(probe);
-    }
-
-    private static int execute(CommandContext<CommandSourceStack> ctx) {
+    public static int execute(CommandContext<CommandSourceStack> ctx) {
         String typeArg = StringArgumentType.getString(ctx, "type").trim();
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt == null) {

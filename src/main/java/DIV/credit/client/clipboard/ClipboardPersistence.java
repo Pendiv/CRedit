@@ -49,7 +49,7 @@ public final class ClipboardPersistence {
             root.put("entries", list);
             NbtIo.writeCompressed(root, f);
         } catch (Exception ex) {
-            Credit.LOGGER.error("[CraftPattern] clipboard save error", ex);
+            Credit.LOGGER.error("[C5007] clipboard save error", ex);
         }
     }
 
@@ -66,7 +66,7 @@ public final class ClipboardPersistence {
             }
             Clipboard.INSTANCE.restore(restored);
         } catch (Exception ex) {
-            Credit.LOGGER.error("[CraftPattern] clipboard load error", ex);
+            Credit.LOGGER.error("[C5008] clipboard load error", ex);
         }
     }
 }

@@ -42,6 +42,7 @@ public final class CreditConfig {
     public static final ForgeConfigSpec.ConfigValue<String> DUMP_ROOT;
     public static final ForgeConfigSpec.IntValue FLUID_DEFAULT_AMOUNT;
     public static final ForgeConfigSpec.IntValue GAS_DEFAULT_AMOUNT;
+    public static final ForgeConfigSpec.IntValue INFUSION_DEFAULT_AMOUNT;
     public static final ForgeConfigSpec.EnumValue<EditPersistence> EDIT_PERSISTENCE;
     public static final ForgeConfigSpec.BooleanValue CRAFTING_SHARE_SLOTS;
     public static final ForgeConfigSpec.BooleanValue UNDO_ENABLED;
@@ -90,6 +91,9 @@ public final class CreditConfig {
     // ─── v2.1.2 出力ファイル構造の切替 ───
     public static final ForgeConfigSpec.BooleanValue UNIFIED_EDIT_FILES;
 
+    // ─── v3.4.x: EMI viewer integration on/off (= 在時 only 有効、 runtime 反映) ───
+    public static final ForgeConfigSpec.BooleanValue EMI_VIEWER_INTEGRATION;
+
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
         b.push("dump");
@@ -106,6 +110,10 @@ public final class CreditConfig {
         GAS_DEFAULT_AMOUNT = b.comment(
                 "Default gas amount (mB) when dragged from JEI.")
             .defineInRange("gasDefault", 1000, 1, Integer.MAX_VALUE);
+        INFUSION_DEFAULT_AMOUNT = b.comment(
+                "Default infusion (Mekanism) amount when dragged from JEI.",
+                "Infusion typically uses smaller amounts than gas (e.g., 10 for redstone infusion).")
+            .defineInRange("infusionDefault", 10, 1, Integer.MAX_VALUE);
         b.pop();
         b.push("editor");
         EDIT_PERSISTENCE = b.comment(
@@ -243,7 +251,26 @@ public final class CreditConfig {
             .define("unifiedEditFiles", true);
         b.pop();
 
+        // v3.4.x: EMI viewer integration (= EMI 在時 only 意味あり)
+        b.push("emi");
+        EMI_VIEWER_INTEGRATION = b.comment(
+                "Enable credit features inside EMI's recipe viewer (= '+' Edit button,",
+                "delete overlay, preview wired through EMI widgets).",
+                "When OFF: credit ignores EMI viewer entirely; JEI viewer continues to work normally.",
+                "When ON (default): both JEI and EMI viewers expose credit Edit/Delete + preview.",
+                "Effect is immediate at runtime (no restart needed).",
+                "Has no effect if EMI is not installed (JEI is mandatory).")
+            .define("viewerIntegration", true);
+        b.pop();
+
         SPEC = b.build();
+    }
+
+    /** v3.4.x: EMI viewer integration が有効 (= EMI 在 + 設定 ON) かを判定する shortcut。 */
+    public static boolean isEmiIntegrationEnabled() {
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("emi")) return false;
+        try { return EMI_VIEWER_INTEGRATION.get(); }
+        catch (Throwable t) { return true; } // config 未 init → default ON
     }
 
     /**

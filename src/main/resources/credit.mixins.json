@@ -5,7 +5,10 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "credit.refmap.json",
   "mixins": [],
-  "client": [],
+  "client": [
+    "EmiRecipeFillerMixin",
+    "RecipeFillButtonWidgetMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

@@ -75,7 +75,7 @@ public final class ChargerDraft implements RecipeDraft {
             }
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] ChargerDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4006] ChargerDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

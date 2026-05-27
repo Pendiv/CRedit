@@ -62,7 +62,7 @@ public final class ImportParser {
         try {
             src = Files.readString(file);
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] import parse: read failed {}", file, e);
+            Credit.LOGGER.error("[C6011] import parse: read failed {}", file, e);
             return List.of();
         }
         String defaultModid = deriveDefaultModid(file, importRoot);
@@ -289,7 +289,7 @@ public final class ImportParser {
                     }
                     // 単独 DELETE
                     if (removeId == null) {
-                        Credit.LOGGER.warn("[CraftPattern] import: event.remove without id: {}", stmtSrc);
+                        Credit.LOGGER.warn("[C601] import: event.remove without id: {}", stmtSrc);
                         return;
                     }
                     String modid = resolveModid(removeId);

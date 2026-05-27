@@ -55,16 +55,18 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "CLIENT"
 
-# JEI — v3.3.x で optional 化。 EMI 単独 user を救うため。
-# JEI か EMI のどちらかは必要 (= 起動時 runtime check で両方無し → chat WARN)
+# JEI — v3.4.x: mandatory に戻し。 credit の全機能 (= category/recipe 列挙、 loadFromRecipe、
+# preview の主経路、 hand-written drafts) が JEI runtime に依存しているため、 不在で起動拒否が誠実。
+# EMI 単独環境は対応外 (= EMI viewer は付帯機能扱い)。
 [[dependencies."${mod_id}"]]
 modId = "jei"
-mandatory = false
+mandatory = true
 versionRange = "[15,)"
 ordering = "AFTER"
 side = "CLIENT"
 
-# EMI — v3.3.x 新規対応。 optional、 JEI と同等扱い。
+# EMI — v3.4.x: optional 維持。 在時は viewer integration (= 「+」 button hijack、 overlay、 preview)
+# を提供。 credit-client.toml の [emi] viewerIntegration で runtime on/off 可能。
 [[dependencies."${mod_id}"]]
 modId = "emi"
 mandatory = false

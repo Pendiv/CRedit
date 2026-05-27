@@ -32,7 +32,7 @@ public final class JeiNavigation {
         if (category == null) return false;
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt == null) {
-            Credit.LOGGER.warn("[CraftPattern] JEI not ready, cannot open category");
+            Credit.LOGGER.warn("[C201] JeiNavigation: JEI not ready, cannot open category");
             return false;
         }
         RecipeType<?> type = category.getRecipeType();
@@ -43,7 +43,7 @@ public final class JeiNavigation {
             Credit.LOGGER.info("[CraftPattern] Opened JEI for {} (origin=CRpattern)", type.getUid());
             return true;
         } catch (Exception e1) {
-            Credit.LOGGER.error("[CraftPattern] showTypes failed for {}", type.getUid(), e1);
+            Credit.LOGGER.error("[C2010] JeiNavigation.showTypes failed for {}", type.getUid(), e1);
             OriginTracker.exit();
             return false;
         }
@@ -73,7 +73,7 @@ public final class JeiNavigation {
         if (recipeId == null) return false;
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt == null) {
-            Credit.LOGGER.warn("[CraftPattern] JEI not ready, cannot open recipe");
+            Credit.LOGGER.warn("[C202] JeiNavigation: JEI not ready, cannot open recipe");
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -121,7 +121,7 @@ public final class JeiNavigation {
         try {
             if (showSpecificRecipe(rt, recipe, focus, recipeId)) return true;
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] showSpecificRecipe failed for {}", recipeId, e);
+            Credit.LOGGER.error("[C2011] JeiNavigation.showSpecificRecipe failed for {}", recipeId, e);
         }
         // 2. fallback: output focus
         if (focus != null) {
@@ -130,7 +130,7 @@ public final class JeiNavigation {
                 Credit.LOGGER.info("[CraftPattern] Opened JEI for {} (output focus FALLBACK)", recipeId);
                 return true;
             } catch (Exception e) {
-                Credit.LOGGER.error("[CraftPattern] output focus fallback failed for {}", recipeId, e);
+                Credit.LOGGER.error("[C2012] JeiNavigation.outputFocusFallback failed for {}", recipeId, e);
             }
         }
         OriginTracker.exit();

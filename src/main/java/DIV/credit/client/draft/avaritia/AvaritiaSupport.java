@@ -102,15 +102,15 @@ public final class AvaritiaSupport {
                     }
                     return (net.minecraft.world.item.crafting.Recipe<?>) ctor.newInstance(args);
                 } catch (Exception ctorEx) {
-                    DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapedRecipe ctor[{}] failed: {}",
+                    DIV.credit.Credit.LOGGER.warn("[C4002] tryBuildShapedRecipe ctor[{}] failed: {}",
                         params.length, ctorEx.toString());
                 }
             }
-            DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapedRecipe: no compatible constructor (tried {})",
+            DIV.credit.Credit.LOGGER.warn("[C401] tryBuildShapedRecipe: no compatible constructor (tried {})",
                 recCls.getConstructors().length);
             return null;
         } catch (Exception e) {
-            DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapedRecipe failed: {}", e.toString());
+            DIV.credit.Credit.LOGGER.warn("[C4003] tryBuildShapedRecipe failed: {}", e.toString());
             return null;
         }
     }
@@ -144,14 +144,14 @@ public final class AvaritiaSupport {
                     }
                     return (net.minecraft.world.item.crafting.Recipe<?>) ctor.newInstance(args);
                 } catch (Exception ctorEx) {
-                    DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapelessRecipe ctor[{}] failed: {}",
+                    DIV.credit.Credit.LOGGER.warn("[C4004] tryBuildShapelessRecipe ctor[{}] failed: {}",
                         params.length, ctorEx.toString());
                 }
             }
-            DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapelessRecipe: no compatible constructor");
+            DIV.credit.Credit.LOGGER.warn("[C402] tryBuildShapelessRecipe: no compatible constructor");
             return null;
         } catch (Exception e) {
-            DIV.credit.Credit.LOGGER.warn("[CraftPattern] tryBuildShapelessRecipe failed: {}", e.toString());
+            DIV.credit.Credit.LOGGER.warn("[C4005] tryBuildShapelessRecipe failed: {}", e.toString());
             return null;
         }
     }

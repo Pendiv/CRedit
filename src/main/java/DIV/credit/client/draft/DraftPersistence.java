@@ -56,7 +56,7 @@ public final class DraftPersistence {
             }
             NbtIo.writeCompressed(root, f);
         } catch (Exception ex) {
-            Credit.LOGGER.error("[CraftPattern] persistence save error", ex);
+            Credit.LOGGER.error("[C5001] persistence save error", ex);
         }
     }
 
@@ -72,7 +72,7 @@ public final class DraftPersistence {
             }
             store.setPendingState(map);
         } catch (Exception ex) {
-            Credit.LOGGER.error("[CraftPattern] persistence load error", ex);
+            Credit.LOGGER.error("[C5002] persistence load error", ex);
         }
     }
 
@@ -129,7 +129,7 @@ public final class DraftPersistence {
                 }
             }
         } catch (Exception ex) {
-            Credit.LOGGER.error("[CraftPattern] persistence apply error", ex);
+            Credit.LOGGER.error("[C5003] persistence apply error", ex);
         }
     }
 

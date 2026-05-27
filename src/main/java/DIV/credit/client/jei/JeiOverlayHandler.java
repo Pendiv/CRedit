@@ -278,7 +278,7 @@ public final class JeiOverlayHandler {
             try {
                 RECIPES_GUI_CLASS = Class.forName("mezz.jei.gui.recipes.RecipesGui");
             } catch (ClassNotFoundException e) {
-                Credit.LOGGER.warn("[JeiOverlay] RecipesGui class not found — JEI internals layout changed?");
+                Credit.LOGGER.warn("[C2008] JeiOverlayHandler: RecipesGui class not found — JEI internals layout changed?");
                 reflectFailed = true;
                 return false;
             }
@@ -308,7 +308,7 @@ public final class JeiOverlayHandler {
             }
             return Collections.emptyList();
         } catch (Exception e) {
-            Credit.LOGGER.error("[JeiOverlay] readLayoutsList failed", e);
+            Credit.LOGGER.error("[C2009] JeiOverlayHandler.readLayoutsList failed", e);
             return Collections.emptyList();
         }
     }

@@ -23,6 +23,11 @@ public final class DraftPreviewSource implements PreviewSource {
         this.category = category;
     }
 
+    /** v3.4.x: EMI fallback path で draft の slot 内容を直接読むため公開。 */
+    public RecipeDraft getDraft() {
+        return draft;
+    }
+
     @Override
     public IRecipeCategory<?> getCategory() {
         return category;

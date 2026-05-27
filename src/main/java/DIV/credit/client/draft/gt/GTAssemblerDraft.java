@@ -122,7 +122,7 @@ public class GTAssemblerDraft implements RecipeDraft {
                 jeiType.getUid(), loaded, n);
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GTAssemblerDraft.loadFromRecipe failed for {}: {}",
+            Credit.LOGGER.warn("[C4018] GTAssemblerDraft.loadFromRecipe failed for {}: {}",
                 jeiType.getUid(), e.toString());
             return false;
         }

@@ -33,7 +33,7 @@ public final class EmitSelfTest {
         switch (r.status) {
             case OK    -> {}
             case SKIP  -> Credit.LOGGER.debug("[CraftPattern] EmitSelfTest skip type={}: {}", typeId, r.message);
-            case FAIL  -> Credit.LOGGER.warn("[CraftPattern] EmitSelfTest FAILED type={} id={}: {}",
+            case FAIL  -> Credit.LOGGER.warn("[C403] EmitSelfTest FAILED type={} id={}: {}",
                             typeId, recipeId, r.message);
         }
     }

@@ -36,23 +36,23 @@ public final class JeiRenderBridge {
     @Nullable
     public static IRecipeLayoutDrawable<?> build(IRecipeCategory<?> category, Object recipe) {
         if (category == null || recipe == null) {
-            Credit.LOGGER.warn("[CraftPattern] JeiRenderBridge.build: null arg (category={}, recipe={})",
+            Credit.LOGGER.warn("[C3004] JeiRenderBridge.build: null arg (category={}, recipe={})",
                 category, recipe);
             return null;
         }
         IJeiRuntime runtime = CraftPatternJeiPlugin.runtime;
         if (runtime == null) {
-            Credit.LOGGER.warn("[CraftPattern] JeiRenderBridge.build: JEI runtime 未準備");
+            Credit.LOGGER.warn("[C301] JeiRenderBridge.build: JEI runtime 未準備");
             return null;
         }
         try {
             return buildTyped(runtime, category, recipe);
         } catch (ClassCastException e) {
-            Credit.LOGGER.warn("[CraftPattern] JeiRenderBridge.build: type mismatch (category={}, recipe={}): {}",
+            Credit.LOGGER.warn("[C3005] JeiRenderBridge.build: type mismatch (category={}, recipe={}): {}",
                 category.getRecipeType().getUid(), recipe.getClass().getName(), e.getMessage());
             return null;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] JeiRenderBridge.build: unexpected error", e);
+            Credit.LOGGER.warn("[C3006] JeiRenderBridge.build: unexpected error", e);
             return null;
         }
     }

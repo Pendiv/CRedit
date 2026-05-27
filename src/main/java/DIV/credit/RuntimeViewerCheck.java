@@ -35,7 +35,7 @@ public final class RuntimeViewerCheck {
         } else if (emi) {
             Credit.LOGGER.info("[CraftPattern] viewer detection: EMI only");
         } else {
-            Credit.LOGGER.error("[CraftPattern] viewer detection: NEITHER JEI NOR EMI installed. credit features will be disabled.");
+            Credit.LOGGER.error("[C901] viewer detection: NEITHER JEI NOR EMI installed. credit features will be disabled.");
         }
         // Phase 1: backend abstraction 初期化 (= active backend 選定)
         // 既存 code path はまだ backend 経由でないので、 init するだけで挙動変化なし。

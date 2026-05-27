@@ -164,7 +164,7 @@ public final class ReconstructionRunner {
              .filter(p -> !isInsideBackup(root, p))
              .forEach(out::add);
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] reconstruction scan failed", e);
+            Credit.LOGGER.error("[C6015] reconstruction scan failed", e);
         }
         return out;
     }
@@ -191,7 +191,7 @@ public final class ReconstructionRunner {
                 Files.move(src, dst);
                 n++;
             } catch (IOException e) {
-                Credit.LOGGER.warn("[CraftPattern] reconstruction backup move failed: {} → {}: {}",
+                Credit.LOGGER.warn("[C6016] reconstruction backup move failed: {} → {}: {}",
                     src, backupRoot, e.getMessage());
             }
         }

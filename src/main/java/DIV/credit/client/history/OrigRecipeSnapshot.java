@@ -166,7 +166,7 @@ public record OrigRecipeSnapshot(
                 default -> { return null; }
             }
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] OrigRecipeSnapshot.toRecipe failed kind={} id={}: {}",
+            Credit.LOGGER.warn("[C5015] OrigRecipeSnapshot.toRecipe failed kind={} id={}: {}",
                 kind, id, e.getMessage());
             return null;
         }

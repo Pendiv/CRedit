@@ -69,7 +69,7 @@ public final class FusionCraftingDraft implements RecipeDraft {
                 rt.getUid(), slotCount);
             return new FusionCraftingDraft(rt, slotCount);
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] FusionCraftingDraft probe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4016] FusionCraftingDraft probe failed: {}", e.toString());
             return null;
         }
     }
@@ -165,7 +165,7 @@ public final class FusionCraftingDraft implements RecipeDraft {
                 loaded, n, tier, totalEnergy);
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] FusionCraftingDraft.loadFromRecipe failed: {}", e.toString());
+            Credit.LOGGER.warn("[C4017] FusionCraftingDraft.loadFromRecipe failed: {}", e.toString());
             return false;
         }
     }

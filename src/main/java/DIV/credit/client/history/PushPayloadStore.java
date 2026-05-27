@@ -105,7 +105,7 @@ public final class PushPayloadStore {
                                 if (origDraftSnap != null) t.put("origDraftSnap", origDraftSnap);
                             }
                         } catch (Exception e) {
-                            DIV.credit.Credit.LOGGER.warn("[CraftPattern] origDraftSnap build failed for {}: {}",
+                            DIV.credit.Credit.LOGGER.warn("[C5011] origDraftSnap build failed for {}: {}",
                                 c.origRecipeId, e.getMessage());
                         }
                     }
@@ -124,7 +124,7 @@ public final class PushPayloadStore {
             int maxKb = configMaxSizeKb();
             if (maxKb > 0 && sizeKb > maxKb) {
                 f.delete();
-                Credit.LOGGER.warn("[CraftPattern] PushPayload {} ({} KB) exceeds limit {} KB, dropped",
+                Credit.LOGGER.warn("[C501] PushPayload {} ({} KB) exceeds limit {} KB, dropped",
                     f.getName(), sizeKb, maxKb);
                 return;
             }
@@ -134,7 +134,7 @@ public final class PushPayloadStore {
 
             trim();
         } catch (Exception e) {
-            Credit.LOGGER.error("[CraftPattern] PushPayload save failed for ts={}", ts, e);
+            Credit.LOGGER.error("[C5012] PushPayload save failed for ts={}", ts, e);
         }
     }
 
@@ -174,7 +174,7 @@ public final class PushPayloadStore {
                  }
              });
         } catch (IOException e) {
-            Credit.LOGGER.warn("[CraftPattern] PushPayload list failed: {}", e.getMessage());
+            Credit.LOGGER.warn("[C5013] PushPayload list failed: {}", e.getMessage());
         }
         out.sort(Comparator.reverseOrder());
         return out;
@@ -215,7 +215,7 @@ public final class PushPayloadStore {
             }
             return out;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] PushPayload load failed for {}: {}", f.getName(), e.getMessage());
+            Credit.LOGGER.warn("[C5014] PushPayload load failed for {}: {}", f.getName(), e.getMessage());
             return Collections.emptyList();
         }
     }

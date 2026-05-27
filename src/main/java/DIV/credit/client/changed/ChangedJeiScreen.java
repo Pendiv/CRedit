@@ -410,9 +410,9 @@ public class ChangedJeiScreen extends Screen {
             d.setPosition(x, y);
             try { d.tick(); } catch (Exception ignored) {}
             try { d.drawRecipe(g, mouseX, mouseY); }
-            catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] drawRecipe failed: {}", e.getMessage()); }
+            catch (Exception e) { Credit.LOGGER.warn("[C6005] drawRecipe failed: {}", e.getMessage()); }
             try { d.drawOverlays(g, mouseX, mouseY); }
-            catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] drawOverlays failed: {}", e.getMessage()); }
+            catch (Exception e) { Credit.LOGGER.warn("[C6006] drawOverlays failed: {}", e.getMessage()); }
             if (i < visibleTags.size()) {
                 drawSourceTag(g, visibleTags.get(i), x - 4, y + 2);
             }

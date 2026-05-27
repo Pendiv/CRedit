@@ -82,7 +82,7 @@ public final class ConflictDetector {
              .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".js"))
              .forEach(p -> all.addAll(ImportParser.parseFile(p)));
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] existing scan failed", e);
+            Credit.LOGGER.error("[C6001] existing scan failed", e);
         }
         return all;
     }

@@ -35,7 +35,7 @@ public final class KeyInterceptor {
         try {
             screen.keyPressed(event.getKeyCode(), event.getScanCode(), event.getModifiers());
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] manual keyPressed dispatch failed", e);
+            Credit.LOGGER.warn("[C7001] manual keyPressed dispatch failed", e);
         }
         event.setCanceled(true);
     }

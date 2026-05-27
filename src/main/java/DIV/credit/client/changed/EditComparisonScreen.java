@@ -434,9 +434,9 @@ public class EditComparisonScreen extends Screen {
             d.setPosition(x, y);
             try { d.tick(); } catch (Exception ignored) {}
             try { d.drawRecipe(g, mouseX, mouseY); }
-            catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] cmp.drawRecipe: {}", e.getMessage()); }
+            catch (Exception e) { Credit.LOGGER.warn("[C6007] cmp.drawRecipe: {}", e.getMessage()); }
             try { d.drawOverlays(g, mouseX, mouseY); }
-            catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] cmp.drawOverlays: {}", e.getMessage()); }
+            catch (Exception e) { Credit.LOGGER.warn("[C6008] cmp.drawOverlays: {}", e.getMessage()); }
             return;
         }
         ChangedJeiScreen.drawModPlaceholderPlate(g, item, columnLeftX, y, columnW, 56);
@@ -470,9 +470,9 @@ public class EditComparisonScreen extends Screen {
         d.setPosition(x, y);
         try { d.tick(); } catch (Exception ignored) {}
         try { d.drawRecipe(g, mouseX, mouseY); }
-        catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] cmp.drawRecipe: {}", e.getMessage()); }
+        catch (Exception e) { Credit.LOGGER.warn("[C6007] cmp.drawRecipe: {}", e.getMessage()); }
         try { d.drawOverlays(g, mouseX, mouseY); }
-        catch (Exception e) { Credit.LOGGER.warn("[CraftPattern] cmp.drawOverlays: {}", e.getMessage()); }
+        catch (Exception e) { Credit.LOGGER.warn("[C6008] cmp.drawOverlays: {}", e.getMessage()); }
     }
 
     private void renderPageNav(GuiGraphics g, int mouseX, int mouseY) {

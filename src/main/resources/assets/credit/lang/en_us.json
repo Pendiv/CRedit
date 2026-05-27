@@ -245,6 +245,7 @@
   "gui.credit.gt.conflict.hint":         "  → GT will reject one of them. Use Edit on the existing recipe to overwrite instead.",
   "gui.credit.auto.fallback.skeleton":   "[CraftPattern] WARN: auto-support failed for %s. Skeleton fallback emitted (= no edit effect). Mod-specific emitter needed.",
   "gui.credit.runtime.no_viewer":        "[CraftPattern] WARN: Neither JEI nor EMI is installed. Credit requires one of them as a recipe viewer. Features are disabled.",
+  "gui.credit.mixin.emi_filler_inactive": "[CraftPattern] WARN: EMI integration mixin may not be active (= EMI version mismatch?). The EMI side \"+\" button edit feature is disabled. Use JEI to edit.",
 
   "gui.credit.import.conflict.title": "Credit — Resolve Import Conflicts",
   "gui.credit.import.conflict.summary": "Conflict %s / %s  (non-conflicting: %s, auto-accepted)",

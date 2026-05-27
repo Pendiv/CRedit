@@ -207,7 +207,9 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             DIV.credit.client.history.HistoryPersistence.load();
         }
         int minInventoryTop = TOP_MARGIN + TAB_AREA_HEIGHT + TagBar.H + 10;
-        this.topPos = Math.max(minInventoryTop, this.height - this.imageHeight - BOTTOM_MARGIN);
+        // v3.3.x: viewer (= EMI 検索 bar 等) の下端占有領域を避けて inventory を上方寄せ
+        int viewerBottomTop = DIV.credit.client.runtime.BackendRegistry.active().getBottomReservedTopY(this.height);
+        this.topPos = Math.max(minInventoryTop, viewerBottomTop - BOTTOM_MARGIN - this.imageHeight);
 
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt != null) {
@@ -1500,29 +1502,17 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         return recipeArea.setSlotIngredient(idx, new DIV.credit.client.draft.IngredientSpec.Item(copy));
     }
 
-    /** JEI sidebar overlay の mouse 下 ingredient を IngredientSpec に変換。 取れなければ null。 */
+    /**
+     * viewer (JEI / EMI) sidebar 上 mouse 下 ingredient を IngredientSpec に変換。 取れなければ null。
+     * v3.3.x: backend 経由化 — JEI 直参照を {@link DIV.credit.client.runtime.BackendRegistry} 経由に。
+     */
     @org.jetbrains.annotations.Nullable
     private DIV.credit.client.draft.IngredientSpec peekJeiOverlayIngredient() {
-        var rt = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
-        if (rt == null) return null;
-        try {
-            var overlay = rt.getIngredientListOverlay();
-            if (overlay == null) return null;
-            // JEI 15.x: getIngredientUnderMouse は @Nullable V を直接返す (Optional ではない)
-            net.minecraft.world.item.ItemStack item =
-                overlay.getIngredientUnderMouse(mezz.jei.api.constants.VanillaTypes.ITEM_STACK);
-            if (item != null && !item.isEmpty()) {
-                net.minecraft.world.item.ItemStack copy = item.copy();
-                copy.setCount(1);
-                return new DIV.credit.client.draft.IngredientSpec.Item(copy);
-            }
-            net.minecraftforge.fluids.FluidStack fluid =
-                overlay.getIngredientUnderMouse(mezz.jei.api.forge.ForgeTypes.FLUID_STACK);
-            if (fluid != null && !fluid.isEmpty()) {
-                return new DIV.credit.client.draft.IngredientSpec.Fluid(fluid.copy());
-            }
-        } catch (Exception ignored) {}
-        return null;
+        // JEI 経路では mouseX/mouseY は無視されるが、 EMI 経路向けに current mouse 渡す
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        int mx = (int) (mc.mouseHandler.xpos() * (double) mc.getWindow().getGuiScaledWidth()  / (double) mc.getWindow().getScreenWidth());
+        int my = (int) (mc.mouseHandler.ypos() * (double) mc.getWindow().getGuiScaledHeight() / (double) mc.getWindow().getScreenHeight());
+        return DIV.credit.client.runtime.BackendRegistry.active().hoveredIngredient(mx, my);
     }
 
     private boolean doUndo() {
@@ -1553,8 +1543,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             if (box.isFocused()) return true;
         }
         if (tagBar.isEditBoxFocused() || stackBuilder.isEditBoxFocused()) return true;
-        // v3.2.x: JEI 検索 bar focus も「text field 入力中」 扱い (= 特殊キー混線回避)
-        return DIV.credit.client.input.JeiSearchFocusHelper.isJeiSearchFocused();
+        // v3.3.x: backend 経由で viewer 検索 box focus 検知 (= JEI/EMI 共通)
+        return DIV.credit.client.runtime.BackendRegistry.active().isSearchFocused();
     }
 
     @Override

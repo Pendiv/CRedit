@@ -51,7 +51,7 @@ public final class ImportRunner {
                 chat(Component.translatable("gui.credit.import.place_files_hint")
                     .withStyle(ChatFormatting.GRAY));
             } catch (IOException e) {
-                Credit.LOGGER.error("[CraftPattern] import folder create failed", e);
+                Credit.LOGGER.error("[C6012] import folder create failed", e);
                 chat(Component.translatable("gui.credit.import.folder_create_failed", e.getMessage())
                     .withStyle(ChatFormatting.RED));
             }
@@ -207,7 +207,7 @@ public final class ImportRunner {
                     src.getFileName(), target.getFileName());
                 n++;
             } catch (IOException e) {
-                Credit.LOGGER.warn("[CraftPattern] import: rename failed for {}: {}", src, e.getMessage());
+                Credit.LOGGER.warn("[C6013] import: rename failed for {}: {}", src, e.getMessage());
             }
         }
         return n;
@@ -314,7 +314,7 @@ public final class ImportRunner {
              .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".js"))
              .forEach(out::add);
         } catch (IOException e) {
-            Credit.LOGGER.error("[CraftPattern] import scan failed", e);
+            Credit.LOGGER.error("[C6014] import scan failed", e);
         }
         return out;
     }

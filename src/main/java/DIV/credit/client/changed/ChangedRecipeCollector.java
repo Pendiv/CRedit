@@ -152,7 +152,7 @@ public final class ChangedRecipeCollector {
                             }
                         }
                     } catch (Exception e) {
-                        Credit.LOGGER.warn("[CraftPattern] origDraftSnap → recipe failed for {}: {}",
+                        Credit.LOGGER.warn("[C6002] origDraftSnap → recipe failed for {}: {}",
                             r.origRecipeId(), e.getMessage());
                     }
                 }
@@ -186,7 +186,7 @@ public final class ChangedRecipeCollector {
                             }
                         }
                     } catch (Exception e) {
-                        Credit.LOGGER.warn("[CraftPattern] draftSnap → recipe failed for {} ({}): {}",
+                        Credit.LOGGER.warn("[C6003] draftSnap → recipe failed for {} ({}): {}",
                             r.recipeId(), t.jeiCategoryUid(), e.getMessage());
                     }
                 }
@@ -308,7 +308,7 @@ public final class ChangedRecipeCollector {
                  }
              });
         } catch (IOException e) {
-            Credit.LOGGER.warn("[CraftPattern] ChangedRecipeCollector: file scan failed: {}", e.getMessage());
+            Credit.LOGGER.warn("[C6004] ChangedRecipeCollector: file scan failed: {}", e.getMessage());
         }
         return out;
     }

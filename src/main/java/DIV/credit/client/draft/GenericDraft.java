@@ -247,7 +247,7 @@ public final class GenericDraft implements RecipeDraft {
             }
             return d;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GenericDraft probe failed for {}: {}",
+            Credit.LOGGER.warn("[C4014] GenericDraft probe failed for {}: {}",
                 cat.getRecipeType().getUid(), e.toString());
             return null;
         }
@@ -420,7 +420,7 @@ public final class GenericDraft implements RecipeDraft {
                 jeiType.getUid(), loaded, n);
             return loaded > 0;
         } catch (Exception e) {
-            Credit.LOGGER.warn("[CraftPattern] GenericDraft.loadFromRecipe failed for {}: {}",
+            Credit.LOGGER.warn("[C4015] GenericDraft.loadFromRecipe failed for {}: {}",
                 jeiType.getUid(), e.toString());
             return false;
         }
