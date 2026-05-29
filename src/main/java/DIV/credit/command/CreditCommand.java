@@ -47,7 +47,17 @@ public final class CreditCommand {
             .then(Commands.literal("help")
                 .then(Commands.literal("error").executes(CreditCommand::doHelpError))
                 .then(Commands.literal("null").executes(CreditCommand::doHelpNull)))
-            .then(Commands.literal("status").executes(CreditCommand::doStatus));
+            .then(Commands.literal("status").executes(CreditCommand::doStatus))
+            // v4.1.x: /credit dev <sub> = 開発・診断 command 群
+            .then(Commands.literal("dev")
+                .then(Commands.literal("probe")
+                    .then(Commands.argument("type", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                        .suggests(DIV.credit.command.ProbeCommand.SUGGEST_TYPES)
+                        .executes(DIV.credit.command.ProbeCommand::execute)))
+                .then(Commands.literal("previewtest")
+                    .executes(DIV.credit.command.PreviewTestCommand::executeNoArg)
+                    .then(Commands.argument("filter", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                        .executes(DIV.credit.command.PreviewTestCommand::execute))));
         event.getDispatcher().register(root);
 
         // v2.2.0 alias: /craftpattern_setting (既存 /craftpattern* シリーズと同じ命名)

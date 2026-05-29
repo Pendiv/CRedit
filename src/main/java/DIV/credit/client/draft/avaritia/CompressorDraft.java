@@ -74,9 +74,21 @@ public final class CompressorDraft implements RecipeDraft {
         );
     }
 
+    /**
+     * v4.1.x: preview 用 CompressorRecipe を AvaritiaSupport reflection で構築。
+     * input 空 / output 空 / output 非 Item → null。
+     */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        return null;
+        IngredientSpec inSpec = slots[IDX_INPUT].unwrap();
+        IngredientSpec outSpec = slots[IDX_OUTPUT].unwrap();
+        net.minecraft.world.item.crafting.Ingredient ing = RecipeDraft.toIngredient(inSpec);
+        if (ing == null || ing.isEmpty()) return null;
+        if (!(outSpec instanceof IngredientSpec.Item outIt) || outIt.stack().isEmpty()) return null;
+        int ic = inputCount.isPresent() ? (int) Math.min(Integer.MAX_VALUE, inputCount.get()) : 1000;
+        int tc = timeCost  .isPresent() ? (int) Math.min(Integer.MAX_VALUE, timeCost.get())   : 240;
+        net.minecraft.resources.ResourceLocation id = new ResourceLocation(Credit.MODID, "draft/compressor");
+        return AvaritiaSupport.tryBuildCompressorRecipe(id, ing, outIt.stack().copy(), ic, tc);
     }
 
     @Override

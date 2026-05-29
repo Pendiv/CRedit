@@ -116,6 +116,59 @@ public final class AvaritiaSupport {
     }
 
     /**
+     * v4.1.x: CompressorRecipe(ResourceLocation, Ingredient, ItemStack, int inputCount, int timeCost)
+     * を reflection 構築。 preview 用 (= toRecipeInstance)。
+     */
+    @Nullable
+    public static net.minecraft.world.item.crafting.Recipe<?> tryBuildCompressorRecipe(
+            net.minecraft.resources.ResourceLocation id,
+            net.minecraft.world.item.crafting.Ingredient input,
+            net.minecraft.world.item.ItemStack output,
+            int inputCount,
+            int timeCost) {
+        try {
+            Class<?> recCls = Class.forName("committee.nova.mods.avaritia.common.crafting.recipe.CompressorRecipe");
+            var ctor = recCls.getConstructor(
+                net.minecraft.resources.ResourceLocation.class,
+                net.minecraft.world.item.crafting.Ingredient.class,
+                net.minecraft.world.item.ItemStack.class,
+                int.class, int.class);
+            return (net.minecraft.world.item.crafting.Recipe<?>) ctor.newInstance(
+                id, input, output, inputCount, timeCost);
+        } catch (Exception e) {
+            DIV.credit.Credit.LOGGER.debug("[CraftPattern] tryBuildCompressorRecipe failed: {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * v4.1.x: ExtremeSmithingRecipe(ResourceLocation, Ingredient template, Ingredient base,
+     * Ingredient additions, ItemStack result) を reflection 構築。
+     */
+    @Nullable
+    public static net.minecraft.world.item.crafting.Recipe<?> tryBuildExtremeSmithingRecipe(
+            net.minecraft.resources.ResourceLocation id,
+            net.minecraft.world.item.crafting.Ingredient template,
+            net.minecraft.world.item.crafting.Ingredient base,
+            net.minecraft.world.item.crafting.Ingredient additions,
+            net.minecraft.world.item.ItemStack result) {
+        try {
+            Class<?> recCls = Class.forName("committee.nova.mods.avaritia.common.crafting.recipe.ExtremeSmithingRecipe");
+            var ctor = recCls.getConstructor(
+                net.minecraft.resources.ResourceLocation.class,
+                net.minecraft.world.item.crafting.Ingredient.class,
+                net.minecraft.world.item.crafting.Ingredient.class,
+                net.minecraft.world.item.crafting.Ingredient.class,
+                net.minecraft.world.item.ItemStack.class);
+            return (net.minecraft.world.item.crafting.Recipe<?>) ctor.newInstance(
+                id, template, base, additions, result);
+        } catch (Exception e) {
+            DIV.credit.Credit.LOGGER.debug("[CraftPattern] tryBuildExtremeSmithingRecipe failed: {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
      * v2.1.2: 指定 tier + inputs + output で ShapelessTableCraftingRecipe を reflection 構築。
      */
     @Nullable

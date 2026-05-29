@@ -56,9 +56,20 @@ public final class ChargerDraft implements RecipeDraft {
         return slotIndex == IDX_OUTPUT ? Integer.MAX_VALUE : 1;
     }
 
+    /**
+     * v4.1.x: preview 用 ChargerRecipe を AE2Support reflection で構築。
+     * input 空 / output 非 Item / output 空 → null (= preview fallback)。
+     */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        return null;
+        IngredientSpec inSpec = slots[IDX_INPUT].unwrap();
+        IngredientSpec outSpec = slots[IDX_OUTPUT].unwrap();
+        net.minecraft.world.item.crafting.Ingredient ing = RecipeDraft.toIngredient(inSpec);
+        if (ing == null || ing.isEmpty()) return null;
+        if (!(outSpec instanceof IngredientSpec.Item outIt) || outIt.stack().isEmpty()) return null;
+        net.minecraft.resources.ResourceLocation id =
+            new net.minecraft.resources.ResourceLocation(Credit.MODID, "draft/charger");
+        return AE2Support.buildChargerRecipe(id, ing, outIt.stack().getItem());
     }
 
     @Override

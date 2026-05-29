@@ -76,9 +76,38 @@ public final class ExtremeSmithingDraft implements RecipeDraft {
         return slotIndex == IDX_OUTPUT ? Integer.MAX_VALUE : 1;
     }
 
+    /**
+     * v4.1.x: preview 用 ExtremeSmithingRecipe を AvaritiaSupport reflection で構築。
+     * <p>注意: recipe class の {@code additions} field は単一 Ingredient。 draft は 3 slot 持つので、
+     * 3 stack を {@code Ingredient.of(stack1, stack2, stack3)} で 1 Ingredient に集約 (= JEI category の
+     * {@code additions.getItems().get(0/1/2)} 仕様と一致)。
+     */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        return null;
+        IngredientSpec tplSpec  = slots[IDX_TEMPLATE].unwrap();
+        IngredientSpec baseSpec = slots[IDX_BASE].unwrap();
+        IngredientSpec outSpec  = slots[IDX_OUTPUT].unwrap();
+        net.minecraft.world.item.crafting.Ingredient tpl  = RecipeDraft.toIngredient(tplSpec);
+        net.minecraft.world.item.crafting.Ingredient base = RecipeDraft.toIngredient(baseSpec);
+        if (tpl == null || tpl.isEmpty()) return null;
+        if (base == null || base.isEmpty()) return null;
+        if (!(outSpec instanceof IngredientSpec.Item outIt) || outIt.stack().isEmpty()) return null;
+
+        // additions 3 slot → Ingredient.of(stacks) で 1 Ingredient 集約
+        java.util.List<ItemStack> addStacks = new java.util.ArrayList<>(3);
+        for (int idx : new int[]{IDX_ADDITION_0, IDX_ADDITION_1, IDX_ADDITION_2}) {
+            IngredientSpec s = slots[idx].unwrap();
+            if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) addStacks.add(it.stack());
+        }
+        net.minecraft.world.item.crafting.Ingredient additions;
+        if (addStacks.isEmpty()) {
+            additions = net.minecraft.world.item.crafting.Ingredient.EMPTY;
+        } else {
+            additions = net.minecraft.world.item.crafting.Ingredient.of(addStacks.toArray(new ItemStack[0]));
+        }
+
+        ResourceLocation id = new ResourceLocation(Credit.MODID, "draft/extreme_smithing");
+        return AvaritiaSupport.tryBuildExtremeSmithingRecipe(id, tpl, base, additions, outIt.stack().copy());
     }
 
     @Override

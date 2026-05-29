@@ -11,13 +11,29 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * Botania 5 schema を emit (= event.custom 経由)。
- * <p>vanilla KubeJS は Botania schema を持たないので raw JSON。
+ * Botania 5 schema を emit。
+ * <p>v4.1.x: {@code kubejs_botania} addon 検知時は addon shortcut syntax
+ * ({@code event.recipes.botania.<type>({...})}) で emit、 不在時は generic
+ * {@code event.custom({type:'botania:<type>', ...})} に fallback。
  * <p>JEI category UID → recipe TYPE id 変換は {@link BotaniaSupport#JEI_UID_TO_TYPE} 参照。
  */
 public final class BotaniaKubeJSEmitter {
 
     private BotaniaKubeJSEmitter() {}
+
+    /** kubejs_botania addon load 状態を 1 回 cache (= 起動中変わらないため)。 */
+    private static Boolean ADDON_LOADED_CACHE;
+
+    /** addon 検知 (= kubejs_botania mod 在 + load 完了)。 */
+    private static boolean isAddonLoaded() {
+        Boolean c = ADDON_LOADED_CACHE;
+        if (c != null) return c;
+        try {
+            boolean r = net.minecraftforge.fml.ModList.get().isLoaded("kubejs_botania");
+            ADDON_LOADED_CACHE = r;
+            return r;
+        } catch (Throwable t) { return false; }
+    }
 
     @Nullable
     public static String emit(String recipeId, ResourceLocation jeiUid, IngredientSpec[] slots, SlotKind[] kinds, long mana) {
@@ -99,17 +115,37 @@ public final class BotaniaKubeJSEmitter {
 
     // ─── helpers ───
 
+    /**
+     * Botania recipe を emit。
+     * <p>{@code kubejs_botania} 在時: {@code event.recipes.botania.<typePath>({...}).id('...')}
+     * <p>不在時: {@code event.custom({type:'<type>', ...}).id('...')} (= 既存)
+     *
+     * <p>両 path とも field 内容は identical (= addon schema が generic JSON 受けるため)。
+     */
     private static String buildEventCustom(String recipeId, String type, LinkedHashMap<String, String> fields) {
         StringBuilder sb = new StringBuilder();
-        sb.append("    event.custom({\n");
-        sb.append("        type: '").append(type).append("',\n");
-        int i = 0, n = fields.size();
-        for (var e : fields.entrySet()) {
-            sb.append("        ").append(e.getKey()).append(": ").append(e.getValue());
-            if (++i < n) sb.append(",");
-            sb.append("\n");
+        if (isAddonLoaded()) {
+            // type は "botania:mana_infusion" 形式 → path 部分 (= "mana_infusion") 抽出
+            String typePath = type.contains(":") ? type.substring(type.indexOf(':') + 1) : type;
+            sb.append("    event.recipes.botania.").append(typePath).append("({\n");
+            int i = 0, n = fields.size();
+            for (var e : fields.entrySet()) {
+                sb.append("        ").append(e.getKey()).append(": ").append(e.getValue());
+                if (++i < n) sb.append(",");
+                sb.append("\n");
+            }
+            sb.append("    }).id('").append(recipeId).append("');\n");
+        } else {
+            sb.append("    event.custom({\n");
+            sb.append("        type: '").append(type).append("',\n");
+            int i = 0, n = fields.size();
+            for (var e : fields.entrySet()) {
+                sb.append("        ").append(e.getKey()).append(": ").append(e.getValue());
+                if (++i < n) sb.append(",");
+                sb.append("\n");
+            }
+            sb.append("    }).id('").append(recipeId).append("');\n");
         }
-        sb.append("    }).id('").append(recipeId).append("');\n");
         DIV.credit.client.io.EmitSelfTest.verifyFields(type, fields, recipeId);
         return sb.toString();
     }

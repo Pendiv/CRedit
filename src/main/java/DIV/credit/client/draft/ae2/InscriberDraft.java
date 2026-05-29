@@ -86,9 +86,24 @@ public final class InscriberDraft implements RecipeDraft {
         mode = forward ? mode.cycle() : mode.cycleBack();
     }
 
+    /**
+     * v4.1.x: preview 用 InscriberRecipe を AE2Support reflection で構築。
+     * middle 必須、 top/bottom optional、 mode (INSCRIBE/PRESS) 反映。
+     */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        return null;
+        IngredientSpec midSpec = slots[IDX_MIDDLE].unwrap();
+        IngredientSpec outSpec = slots[IDX_OUTPUT].unwrap();
+        net.minecraft.world.item.crafting.Ingredient mid = RecipeDraft.toIngredient(midSpec);
+        if (mid == null || mid.isEmpty()) return null;
+        if (!(outSpec instanceof IngredientSpec.Item outIt) || outIt.stack().isEmpty()) return null;
+        net.minecraft.world.item.crafting.Ingredient top = RecipeDraft.toIngredient(slots[IDX_TOP].unwrap());
+        net.minecraft.world.item.crafting.Ingredient bot = RecipeDraft.toIngredient(slots[IDX_BOTTOM].unwrap());
+        if (top == null) top = net.minecraft.world.item.crafting.Ingredient.EMPTY;
+        if (bot == null) bot = net.minecraft.world.item.crafting.Ingredient.EMPTY;
+        net.minecraft.resources.ResourceLocation id =
+            new net.minecraft.resources.ResourceLocation(Credit.MODID, "draft/inscriber");
+        return AE2Support.buildInscriberRecipe(id, mid, outIt.stack().copy(), top, bot, mode.name());
     }
 
     @Override

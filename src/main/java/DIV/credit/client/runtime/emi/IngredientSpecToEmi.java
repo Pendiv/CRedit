@@ -72,9 +72,11 @@ public final class IngredientSpecToEmi {
             return EmiIngredient.of(key, Math.max(1, ft.count()));
         }
 
-        if (unwrapped instanceof IngredientSpec.Gas) {
-            // v1: Mek chemical は pure-EMI native 表示不可。 substitution skip (= 元 widget 維持)。
-            // 呼び出し側で null 判定 → 元 SlotWidget をそのまま描画する想定。
+        if (unwrapped instanceof IngredientSpec.Gas g) {
+            // v4.1.x: Mek chemical を JemiStack 化 (= JEI Mek plugin の IIngredientType + helper + renderer 経由)。
+            // JEI runtime + Mek 在時のみ機能、 失敗時 null → 呼出側で元 widget 維持。
+            EmiStack jemi = tryBuildJemiChemicalStack(g);
+            if (jemi != null) return jemi;
             return null;
         }
 
@@ -83,12 +85,94 @@ public final class IngredientSpecToEmi {
     }
 
     /**
-     * 呼出側用の判定 helper。 chemical 等 substitution 不可な spec → 元 widget 維持を意味する。
+     * Mek chemical → JemiStack 化。 失敗時 null。
+     * <ol>
+     *   <li>Mek + JEI runtime 利用可能 check</li>
+     *   <li>chemicalType に応じた IIngredientType (= MekanismJEI.TYPE_GAS 等) 取得</li>
+     *   <li>{@link DIV.credit.client.jei.mek.MekanismIngredientAdapter} で IngredientSpec.Gas → ChemicalStack 変換</li>
+     *   <li>JEI mgr から IIngredientHelper / IIngredientRenderer 取得</li>
+     *   <li>{@code new JemiStack(type, helper, renderer, stack).setAmount(amount)} で構築</li>
+     * </ol>
+     */
+    @Nullable
+    private static EmiStack tryBuildJemiChemicalStack(IngredientSpec.Gas g) {
+        if (g == null || g.gasId() == null) return null;
+        try {
+            if (!net.minecraftforge.fml.ModList.get().isLoaded("mekanism")) return null;
+            if (!net.minecraftforge.fml.ModList.get().isLoaded("jei")) return null;
+            var jeiRt = DIV.credit.jei.CraftPatternJeiPlugin.runtime;
+            if (jeiRt == null) return null;
+
+            // 1. chemicalType に応じた IIngredientType + stack object
+            mezz.jei.api.ingredients.IIngredientType<?> type;
+            Object stack;
+            switch (g.chemicalType()) {
+                case GAS -> {
+                    type = mekanism.client.jei.MekanismJEI.TYPE_GAS;
+                    stack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toGasStack(g);
+                }
+                case INFUSION -> {
+                    type = mekanism.client.jei.MekanismJEI.TYPE_INFUSION;
+                    stack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toInfusionStack(g);
+                }
+                case PIGMENT -> {
+                    type = mekanism.client.jei.MekanismJEI.TYPE_PIGMENT;
+                    stack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toPigmentStack(g);
+                }
+                case SLURRY -> {
+                    type = mekanism.client.jei.MekanismJEI.TYPE_SLURRY;
+                    stack = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toSlurryStack(g);
+                }
+                default -> { return null; }
+            }
+            if (type == null || stack == null) return null;
+
+            // 2. JEI mgr から helper / renderer 取得
+            var ingMgr = jeiRt.getIngredientManager();
+            @SuppressWarnings({"unchecked","rawtypes"})
+            var helper   = ingMgr.getIngredientHelper((mezz.jei.api.ingredients.IIngredientType) type);
+            @SuppressWarnings({"unchecked","rawtypes"})
+            var renderer = ingMgr.getIngredientRenderer((mezz.jei.api.ingredients.IIngredientType) type);
+            if (helper == null || renderer == null) return null;
+
+            // 3. JemiStack 構築 (= reflection で ctor 解決、 EMI version 差吸収)
+            return constructJemiStack(type, helper, renderer, stack, g.amount());
+        } catch (Throwable t) {
+            Credit.LOGGER.debug("[CraftPattern] tryBuildJemiChemicalStack failed: {}", t.toString());
+            return null;
+        }
+    }
+
+    /** dev.emi.emi.jemi.JemiStack(IIngredientType, IIngredientHelper, IIngredientRenderer, Object) 構築 + amount。 */
+    @Nullable
+    private static EmiStack constructJemiStack(Object type, Object helper, Object renderer, Object ingredient, long amount) {
+        try {
+            Class<?> jemiStackCls = Class.forName("dev.emi.emi.jemi.JemiStack");
+            // ctor 探索: 4-arg (type, helper, renderer, ingredient) または 5-arg (amount 含む)
+            for (var ctor : jemiStackCls.getDeclaredConstructors()) {
+                Class<?>[] ps = ctor.getParameterTypes();
+                if (ps.length == 4) {
+                    try {
+                        ctor.setAccessible(true);
+                        EmiStack js = (EmiStack) ctor.newInstance(type, helper, renderer, ingredient);
+                        if (amount > 0) js.setAmount(amount);
+                        return js;
+                    } catch (Throwable ignored) {}
+                }
+            }
+            return null;
+        } catch (Throwable t) {
+            Credit.LOGGER.debug("[CraftPattern] constructJemiStack failed: {}", t.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 呼出側用の判定 helper。 v4.1.x: Mek chemical も substitution 可能になったため常に true。
+     * (= 実 substitution が失敗した場合は toEmi が null 返却で呼出側が skip)。
      */
     public static boolean canSubstitute(@Nullable IngredientSpec spec) {
-        if (spec == null) return true; // null = 空 = 空で substitute OK
-        IngredientSpec u = spec.unwrap();
-        return !(u instanceof IngredientSpec.Gas);
+        return true;
     }
 
     /** debug / log 用の short label。 */

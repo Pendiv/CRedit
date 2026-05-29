@@ -119,9 +119,30 @@ public final class TransformDraft implements RecipeDraft {
         circumstance = forward ? circumstance.cycle() : circumstance.cycleBack();
     }
 
+    /**
+     * v4.1.x: preview 用 TransformRecipe を AE2Support reflection で構築。
+     * circumstance (EXPLOSION / FLUID + fluidTag) 反映。 input 1 個以上必要。
+     */
     @Override
     public net.minecraft.world.item.crafting.Recipe<?> toRecipeInstance() {
-        return null;
+        IngredientSpec outSpec = slots[outputIndex].unwrap();
+        if (!(outSpec instanceof IngredientSpec.Item outIt) || outIt.stack().isEmpty()) return null;
+        net.minecraft.core.NonNullList<net.minecraft.world.item.crafting.Ingredient> ings =
+            net.minecraft.core.NonNullList.create();
+        for (int i = 0; i < inputSlotCount; i++) {
+            net.minecraft.world.item.crafting.Ingredient ing = RecipeDraft.toIngredient(slots[i].unwrap());
+            if (ing != null && !ing.isEmpty()) ings.add(ing);
+        }
+        if (ings.isEmpty()) return null;
+        net.minecraft.resources.ResourceLocation id =
+            new net.minecraft.resources.ResourceLocation(Credit.MODID, "draft/transform");
+        boolean isExplosion = (circumstance == Circumstance.EXPLOSION);
+        net.minecraft.resources.ResourceLocation fluidRl = null;
+        if (!isExplosion && fluidTag != null && !fluidTag.isEmpty()) {
+            try { fluidRl = new net.minecraft.resources.ResourceLocation(fluidTag); }
+            catch (Exception ignored) {}
+        }
+        return AE2Support.buildTransformRecipe(id, ings, outIt.stack().copy(), isExplosion, fluidRl);
     }
 
     @Override
