@@ -1,0 +1,31 @@
+# MacOS DS_Store files
+.DS_Store
+
+# Gradle cache folder
+.gradle
+
+# Gradle build folder
+build
+
+# IntelliJ
+out/
+.idea
+*.iml
+# mpeltonen/sbt-idea plugin
+.idea_modules/
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# Common working directory
+run
+
+# credit: internal dev / handoff notes (kept local, not published)
+/HANDOFF.md
+/JEI_DIFF_1.20.1_to_1.21.md
+/KUBEJS_1.21_NOTES.md
+
+# Claude Code / AI assistant files (never publish)
+.claude/
+claude/
+CLAUDE.md
