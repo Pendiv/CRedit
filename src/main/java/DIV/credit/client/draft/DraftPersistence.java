@@ -1,0 +1,268 @@
+package DIV.credit.client.draft;
+
+import DIV.credit.Credit;
+import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.fluids.FluidStack;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * MAX persistence モード時、DraftStore の draft 状態を
+ * `<gameDir>/config/credit-drafts.dat` (NBT/gzip) にシリアライズする。
+ *
+ * 保存対象は draft の slot 内容と numericFields の値のみ。
+ * 復元は draft が getOrCreate されたタイミングで pending state から apply する遅延方式。
+ */
+public final class DraftPersistence {
+
+    public static final String FILE_NAME = "credit-drafts.dat";
+
+    private DraftPersistence() {}
+
+    // ───── 1.21: ItemStack/FluidStack の NBT 入出力は codec 経由 (旧 save(CompoundTag)/of/writeToNBT は廃止) ─────
+
+    private static HolderLookup.Provider regs() {
+        var conn = Minecraft.getInstance().getConnection();
+        return conn != null ? conn.registryAccess() : RegistryAccess.EMPTY;
+    }
+
+    private static Tag saveStack(ItemStack stack) {
+        return ItemStack.CODEC.encodeStart(RegistryOps.create(NbtOps.INSTANCE, regs()), stack)
+            .result().orElse(new CompoundTag());
+    }
+
+    private static ItemStack loadStack(CompoundTag t) {
+        return ItemStack.CODEC.parse(RegistryOps.create(NbtOps.INSTANCE, regs()), t)
+            .result().orElse(ItemStack.EMPTY);
+    }
+
+    private static Tag saveFluid(FluidStack fs) {
+        return FluidStack.CODEC.encodeStart(RegistryOps.create(NbtOps.INSTANCE, regs()), fs)
+            .result().orElse(new CompoundTag());
+    }
+
+    private static FluidStack loadFluid(CompoundTag t) {
+        return FluidStack.CODEC.parse(RegistryOps.create(NbtOps.INSTANCE, regs()), t)
+            .result().orElse(FluidStack.EMPTY);
+    }
+
+    public static Path file() {
+        return Minecraft.getInstance().gameDirectory.toPath()
+            .resolve("config").resolve(FILE_NAME);
+    }
+
+    // ───── save ─────
+
+    public static void save(DraftStore store) {
+        try {
+            CompoundTag root = new CompoundTag();
+            for (var e : store.snapshotDrafts().entrySet()) {
+                CompoundTag t = serializeDraft(e.getValue());
+                if (t != null) root.put(e.getKey(), t);
+            }
+            // pending state（まだ開かれていないカテゴリ）も保持する
+            for (var e : store.snapshotPending().entrySet()) {
+                if (!root.contains(e.getKey())) root.put(e.getKey(), e.getValue());
+            }
+            Path p = file();
+            Files.createDirectories(p.getParent());
+            File f = p.toFile();
+            if (root.isEmpty()) {
+                if (f.exists()) f.delete();
+                return;
+            }
+            NbtIo.writeCompressed(root, p);
+        } catch (Exception ex) {
+            Credit.LOGGER.error("[C5001] persistence save error", ex);
+        }
+    }
+
+    public static void load(DraftStore store) {
+        Path p = file();
+        if (!Files.exists(p)) return;
+        try {
+            CompoundTag root = NbtIo.readCompressed(p, NbtAccounter.unlimitedHeap());
+            Map<String, CompoundTag> map = new HashMap<>();
+            for (String key : root.getAllKeys()) {
+                Tag t = root.get(key);
+                if (t instanceof CompoundTag c) map.put(key, c);
+            }
+            store.setPendingState(map);
+        } catch (Exception ex) {
+            Credit.LOGGER.error("[C5002] persistence load error", ex);
+        }
+    }
+
+    // ───── serialize / parse ─────
+
+    public static CompoundTag serializeDraft(RecipeDraft d) {
+        CompoundTag t = new CompoundTag();
+        ListTag slots = new ListTag();
+        for (int i = 0; i < d.slotCount(); i++) {
+            slots.add(serializeSpec(d.getSlot(i)));
+        }
+        t.put("slots", slots);
+        ListTag fields = new ListTag();
+        for (var f : d.numericFields()) {
+            CompoundTag fc = new CompoundTag();
+            fc.putString("label", f.label());
+            fc.putDouble("v", f.getter().getAsDouble());
+            // v2.1.3 round-trip: nullable field の present 状態も保存 (= unset を復元時に維持)
+            fc.putBoolean("present", f.isPresent().getAsBoolean());
+            fields.add(fc);
+        }
+        t.put("fields", fields);
+        return t;
+    }
+
+    public static void applyTo(RecipeDraft d, CompoundTag t) {
+        try {
+            ListTag slots = t.getList("slots", Tag.TAG_COMPOUND);
+            int n = Math.min(slots.size(), d.slotCount());
+            int parsedNull = 0, rejected = 0, setOk = 0;
+            for (int i = 0; i < n; i++) {
+                IngredientSpec spec = parseSpec(slots.getCompound(i));
+                if (spec == null) { parsedNull++; continue; }
+                if (!d.acceptsAt(i, spec)) {
+                    rejected++;
+                    Credit.LOGGER.info("[CraftPattern] applyTo: slot[{}] acceptsAt=false (spec={}, type={})",
+                        i, spec.getClass().getSimpleName(),
+                        slots.getCompound(i).getString("type"));
+                    continue;
+                }
+                d.setSlot(i, spec);
+                setOk++;
+            }
+            Credit.LOGGER.info("[CraftPattern] applyTo: draft={}, slots nbt={}, draftSlots={}, setOk={}, parsedNull={}, rejected={}",
+                d.getClass().getSimpleName(), slots.size(), d.slotCount(), setOk, parsedNull, rejected);
+            ListTag fields = t.getList("fields", Tag.TAG_COMPOUND);
+            Map<String, RecipeDraft.NumericField> byLabel = new HashMap<>();
+            for (var f : d.numericFields()) byLabel.put(f.label(), f);
+            for (int i = 0; i < fields.size(); i++) {
+                CompoundTag fc = fields.getCompound(i);
+                var f = byLabel.get(fc.getString("label"));
+                if (f != null) {
+                    // present 復元: nullable field で present=false 保存なら clear。
+                    // 非 nullable / 旧 NBT (present 欠落) は後方互換で present=true 扱い。
+                    // fresh draft の NullableLong は present=true 既定のため、 clear を明示
+                    // しないと「ユーザーが消した行」 が値付きで復活する (= unset 喪失バグ)。
+                    boolean present = !f.nullable() || !fc.contains("present") || fc.getBoolean("present");
+                    if (present) {
+                        double v = fc.getDouble("v");
+                        v = Math.max(f.min(), Math.min(f.max(), v));
+                        f.setter().accept(v);
+                    } else {
+                        f.clearer().run();
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            Credit.LOGGER.error("[C5003] persistence apply error", ex);
+        }
+    }
+
+    public static CompoundTag serializeSpec(IngredientSpec s) {
+        CompoundTag t = new CompoundTag();
+        // Configured は base を serialize して option を別 key で保存
+        if (s instanceof IngredientSpec.Configured c) {
+            t = serializeSpec(c.base());
+            if (c.opt() != IngredientSpec.ItemOption.NONE) {
+                t.putString("opt", c.opt().name());
+                if (c.opt() == IngredientSpec.ItemOption.GT_CHANCE) {
+                    t.putInt("chance", c.chanceMille());
+                    t.putInt("boost",  c.tierBoost());
+                }
+            }
+            return t;
+        }
+        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
+            t.putString("type", "item");
+            t.put("stack", saveStack(it.stack()));
+        } else if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
+            t.putString("type", "tag");
+            t.putString("id", tg.tagId().toString());
+            t.putInt("count", tg.count());
+        } else if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
+            t.putString("type", "fluid");
+            t.put("stack", saveFluid(fl.stack()));
+        } else if (s instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
+            t.putString("type", "fluidtag");
+            t.putString("id", ft.tagId().toString());
+            t.putInt("amt", ft.amount());
+        } else if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
+            t.putString("type", "gas");
+            t.putString("id", g.gasId().toString());
+            t.putInt("amt", g.amount());
+            // v3.3.x: chemicalType を保存 (= GAS/INFUSION/PIGMENT/SLURRY)、 欠落時は GAS で復元
+            t.putString("chem", g.chemicalType().name());
+        } else {
+            t.putString("type", "empty");
+        }
+        return t;
+    }
+
+    public static IngredientSpec parseSpec(CompoundTag t) {
+        String type = t.getString("type");
+        try {
+            IngredientSpec base = switch (type) {
+                case "item" -> IngredientSpec.ofItem(loadStack(t.getCompound("stack")));
+                case "tag"  -> IngredientSpec.ofTag(ResourceLocation.parse(t.getString("id")));
+                case "fluid" -> {
+                    FluidStack fs = loadFluid(t.getCompound("stack"));
+                    yield IngredientSpec.ofFluid(fs);
+                }
+                case "fluidtag" -> IngredientSpec.ofFluidTag(
+                    ResourceLocation.parse(t.getString("id")), t.getInt("amt"));
+                case "gas" -> {
+                    ResourceLocation gid = ResourceLocation.parse(t.getString("id"));
+                    int amt = t.getInt("amt");
+                    // v3.3.x: chem field で 4 種識別 (= 旧 NBT は欠落 → GAS で復元)
+                    IngredientSpec.ChemicalType ct;
+                    try {
+                        ct = t.contains("chem")
+                            ? IngredientSpec.ChemicalType.valueOf(t.getString("chem"))
+                            : IngredientSpec.ChemicalType.GAS;
+                    } catch (Exception e) { ct = IngredientSpec.ChemicalType.GAS; }
+                    yield switch (ct) {
+                        case GAS      -> IngredientSpec.ofGas(gid, amt);
+                        case INFUSION -> IngredientSpec.ofInfusion(gid, amt);
+                        case PIGMENT  -> IngredientSpec.ofPigment(gid, amt);
+                        case SLURRY   -> IngredientSpec.ofSlurry(gid, amt);
+                    };
+                }
+                default -> IngredientSpec.EMPTY;
+            };
+            if (t.contains("opt")) {
+                try {
+                    IngredientSpec.ItemOption opt = IngredientSpec.ItemOption.valueOf(t.getString("opt"));
+                    IngredientSpec wrapped = base.withOption(opt);
+                    if (opt == IngredientSpec.ItemOption.GT_CHANCE
+                        && wrapped instanceof IngredientSpec.Configured c) {
+                        int chance = t.contains("chance") ? t.getInt("chance") : 1000;
+                        int boost  = t.contains("boost")  ? t.getInt("boost")  : 0;
+                        return c.withChance(chance, boost);
+                    }
+                    return wrapped;
+                } catch (IllegalArgumentException ignored) {}
+            }
+            return base;
+        } catch (Exception ex) {
+            return IngredientSpec.EMPTY;
+        }
+    }
+}
