@@ -13,6 +13,17 @@ repositories {
 
     // BlameJared — JEI (and later KubeJS / Rhino / other blamejared-hosted mods).
     maven { url = "https://maven.blamejared.com/" }
+
+    // CurseMaven — serves any CurseForge file by id: curse.maven:<slug>-<projectId>:<fileId>.
+    // Uniform route for dev-environment mods (no local jars). NeoForge 1.21 jars work directly (no fg.deobf).
+    maven { url = "https://cursemaven.com" }
+
+    // Latvian — KubeJS / Rhino family. Architectury — KubeJS's runtime dep.
+    maven { url = "https://maven.latvian.dev/releases" }
+    maven { url = "https://maven.architectury.dev/" }
+
+    // JitPack — com.github.* transitive deps (e.g. KubeJS's animated-gif-lib-for-java).
+    maven { url = "https://jitpack.io" }
 }
 
 base {
@@ -111,6 +122,14 @@ dependencies {
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     runtimeOnly "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+
+    // Mekanism via CurseMaven (project 268560). Full jar = compile API + dev runtime.
+    // NeoForge 1.21: no deobf needed. credit will compile against Mek API once the chemical adapter is un-stubbed.
+    implementation "curse.maven:mekanism-268560:7132168"
+
+    // KubeJS — NOT a compile dependency (credit emits .js as text; zero KubeJS imports). Loaded at dev
+    // runtime only, to verify emitted scripts actually apply. rhino/architectury resolve transitively.
+    runtimeOnly "dev.latvian.mods:kubejs-neoforge:${kubejs_version}"
 
     // Example mod dependency using a mod jar from ./libs with a flat dir repository
     // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
