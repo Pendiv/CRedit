@@ -323,11 +323,10 @@ public final class GenericDraft implements RecipeDraft {
                 return output ? SlotKind.FLUID_OUTPUT : SlotKind.FLUID_INPUT;
             }
             if (ModList.get().isLoaded("mekanism")) {
-                // v3.3.x: Mek chemical 4 種は全て GAS_INPUT/OUTPUT slot kind で扱う (= IngredientSpec.Gas.chemicalType で区別)
-                if ("mekanism.api.chemical.gas.GasStack".equals(typeUid)
-                    || "mekanism.api.chemical.infuse.InfusionStack".equals(typeUid)
-                    || "mekanism.api.chemical.pigment.PigmentStack".equals(typeUid)
-                    || "mekanism.api.chemical.slurry.SlurryStack".equals(typeUid)) {
+                // 1.21: Mek は Gas/Infusion/Pigment/Slurry を単一 ChemicalStack に統合
+                //   (type uid = "mekanism.api.chemical.ChemicalStack")。 旧 1.20.1 は 4 種別 uid だった。
+                //   接頭辞一致で新旧どちらも GAS_INPUT/OUTPUT として扱う。
+                if (typeUid != null && typeUid.startsWith("mekanism.api.chemical.")) {
                     return output ? SlotKind.GAS_OUTPUT : SlotKind.GAS_INPUT;
                 }
             }
