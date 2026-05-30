@@ -1,6 +1,9 @@
 package DIV.credit.jei;
 
 import DIV.credit.Credit;
+import DIV.credit.client.jei.BuilderGhostHandler;
+import DIV.credit.client.jei.BuilderGuiContainerHandler;
+import DIV.credit.client.screen.BuilderScreen;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
@@ -29,7 +32,9 @@ public class CraftPatternJeiPlugin implements IModPlugin {
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
-        // TODO(1.21-port): BuilderScreen の ghost/container handler 登録を screens 移植時に復元。
+        // JEI 右パネルから BuilderScreen への drag-drop (ghost ingredient) + exclusion area。
+        registration.addGhostIngredientHandler(BuilderScreen.class, new BuilderGhostHandler());
+        registration.addGuiContainerHandler(BuilderScreen.class, new BuilderGuiContainerHandler());
     }
 
     @Override
