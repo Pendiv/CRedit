@@ -695,12 +695,27 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
         try { return v.get(); } catch (Exception e) { return fallback; }
     }
 
+    /** 1.21 独自ハイライト用: 現在 drag/hold 中の ingredient spec (優先: dragSpec > JEI ghost > ghostCursor)。 */
+    @org.jetbrains.annotations.Nullable
+    private DIV.credit.client.draft.IngredientSpec currentHighlightSpec() {
+        if (dragSpec != null && !dragSpec.isEmpty()) return dragSpec;
+        var jei = DIV.credit.client.jei.BuilderGhostHandler.DRAG_HIGHLIGHT_SPEC;
+        if (jei != null && !jei.isEmpty()) return jei;
+        if (ghostCursor != null && !ghostCursor.isEmpty())
+            return DIV.credit.client.recipe.RecipeArea.ingredientFromCursor(ghostCursor);
+        return null;
+    }
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 1.21: super (AbstractContainerScreen).render が renderBackground を呼ぶため明示呼びは不要。
         //   二重呼びすると透明 dark gradient が重なり背景が過度に暗くなる (preview 越しで顕著)。
         super.render(g, mouseX, mouseY, partialTick);
         recipeArea.render(g, mouseX, mouseY);
+
+        // 1.21 独自: drag/hold 中、 受け入れ可能 slot を緑ハイライト (EMI 風)
+        DIV.credit.client.draft.IngredientSpec hlSpec = currentHighlightSpec();
+        if (hlSpec != null && !hlSpec.isEmpty()) recipeArea.renderAcceptHighlight(g, hlSpec);
 
         renderModeToggle(g, mouseX, mouseY);
         renderUnsupportedNotice(g);

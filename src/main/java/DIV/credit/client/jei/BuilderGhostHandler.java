@@ -25,9 +25,13 @@ import java.util.Optional;
  */
 public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScreen> {
 
+    /** EMI 風スロットハイライト用: 現在 ghost-drag 中の spec (= 受け入れ可能 slot を緑表示)。 onComplete で clear。 */
+    public static volatile IngredientSpec DRAG_HIGHLIGHT_SPEC = IngredientSpec.EMPTY;
+
     @Override
     public <I> List<Target<I>> getTargetsTyped(BuilderScreen gui, ITypedIngredient<I> ingredient, boolean doStart) {
         IngredientSpec testSpec = toSpec(ingredient.getType(), ingredient.getIngredient());
+        DRAG_HIGHLIGHT_SPEC = testSpec;  // drag 中ハイライト用に保持
         // doStart=true は drag 開始時の 1 回。doStart=false は hover 中。drag 開始時のみログ。
         if (doStart) {
             Credit.LOGGER.info("[CraftPattern] ghost drag START: ingredientType={} (class={}) → spec={}",
@@ -82,7 +86,7 @@ public class BuilderGhostHandler implements IGhostIngredientHandler<BuilderScree
     }
 
     @Override
-    public void onComplete() {}
+    public void onComplete() { DRAG_HIGHLIGHT_SPEC = IngredientSpec.EMPTY; }
 
     private static final boolean HAS_MEK = ModList.get().isLoaded("mekanism");
 

@@ -828,5 +828,21 @@ public class RecipeArea {
         return -1;
     }
 
+    /**
+     * v1.21 独自: drag/hold 中の spec を「受け入れ可能」な slot を緑ハイライト (EMI 風)。
+     * {@link #collectGhostTargets()} の各 slot に {@code draft.acceptsAt} を適用して塗る。
+     */
+    public void renderAcceptHighlight(GuiGraphics g, IngredientSpec spec) {
+        if (draft == null || spec == null || spec.isEmpty()) return;
+        for (GhostTargetInfo info : collectGhostTargets()) {
+            if (!draft.acceptsAt(info.slotIndex(), spec)) continue;
+            Rect2i a = info.screenArea();
+            int x1 = a.getX(), y1 = a.getY();
+            int x2 = x1 + a.getWidth(), y2 = y1 + a.getHeight();
+            g.fill(x1, y1, x2, y2, 0x3344FF44);            // 緑塗り (薄め: 透明度高め)
+            g.renderOutline(x1, y1, a.getWidth(), a.getHeight(), 0xFF44FF44); // 緑枠 (縁を強調)
+        }
+    }
+
     public record GhostTargetInfo(int slotIndex, Rect2i screenArea) {}
 }
