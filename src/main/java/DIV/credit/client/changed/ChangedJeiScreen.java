@@ -32,6 +32,12 @@ import java.util.Map;
  * 閲覧 only。 click は drawable に渡さない。 ESC で close。
  */
 public class ChangedJeiScreen extends Screen {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     // vanilla container 風 灰色テーマ
     private static final int BG_PLATE   = 0xFFC6C6C6;

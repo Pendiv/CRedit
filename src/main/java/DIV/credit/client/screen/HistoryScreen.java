@@ -20,6 +20,12 @@ import java.util.List;
  * 詳細は (操作 / recipe ID / 出力ファイル path) の list。
  */
 public class HistoryScreen extends Screen {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     private static final DateTimeFormatter TIME_FMT =
         DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());

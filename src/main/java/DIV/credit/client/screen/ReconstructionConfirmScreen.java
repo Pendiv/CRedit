@@ -13,6 +13,12 @@ import org.jetbrains.annotations.Nullable;
  * Run 時は callback を呼び、 caller (ReconstructionRunner.execute) が実処理を進める。
  */
 public class ReconstructionConfirmScreen extends Screen {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     @Nullable private final Screen parent;
     private final int fileCount;

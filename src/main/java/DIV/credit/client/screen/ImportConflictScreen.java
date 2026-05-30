@@ -21,6 +21,12 @@ import java.util.function.Consumer;
  * caller (ImportRunner) に決定マップを返す。non-conflict は自動 accept される (このスクリーンでは扱わない)。
  */
 public class ImportConflictScreen extends Screen {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     /** 1 conflict 単位の決定。 */
     public enum Decision { KEEP_IMPORT, KEEP_EXISTING, SKIP }

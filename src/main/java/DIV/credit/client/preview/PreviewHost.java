@@ -19,6 +19,12 @@ import org.jetbrains.annotations.Nullable;
  * </ul>
  */
 public class PreviewHost extends Screen {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     private static final int BG_COLOR = 0x80101020;
     private static final int CLOSE_ALL_W = 80;

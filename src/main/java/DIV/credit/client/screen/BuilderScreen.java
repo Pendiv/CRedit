@@ -40,6 +40,12 @@ import java.util.Optional;
 
 @OnlyIn(Dist.CLIENT)
 public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
+    /** 1.21: renderBackground は常に blur(renderBlurredBackground)+menu背景を描くため、 1.20.1 相当の透明 dark gradient に差し替え(曇り回避)。 */
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(g);
+    }
+
 
     public static final int TOP_MARGIN      = 5;
     public static final int BOTTOM_MARGIN   = 5;
@@ -695,7 +701,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        renderBackground(g, mouseX, mouseY, partialTick);  // 1.21: renderBackground は 4 引数
+        // 1.21: super (AbstractContainerScreen).render が renderBackground を呼ぶため明示呼びは不要。
+        //   二重呼びすると透明 dark gradient が重なり背景が過度に暗くなる (preview 越しで顕著)。
         super.render(g, mouseX, mouseY, partialTick);
         recipeArea.render(g, mouseX, mouseY);
 

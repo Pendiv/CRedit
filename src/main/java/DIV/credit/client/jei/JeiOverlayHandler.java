@@ -317,7 +317,8 @@ public final class JeiOverlayHandler {
     private static IRecipeLayoutDrawable<?> readRecipeLayout(Object recipeLayoutWithButtons) {
         try {
             if (RECIPE_LAYOUT_ACCESSOR == null) {
-                RECIPE_LAYOUT_ACCESSOR = recipeLayoutWithButtons.getClass().getMethod("recipeLayout");
+                // JEI 1.21: アクセサが recipeLayout() → getRecipeLayout() に改名
+                RECIPE_LAYOUT_ACCESSOR = recipeLayoutWithButtons.getClass().getMethod("getRecipeLayout");
             }
             Object res = RECIPE_LAYOUT_ACCESSOR.invoke(recipeLayoutWithButtons);
             if (res instanceof IRecipeLayoutDrawable<?> ird) return ird;
@@ -334,19 +335,21 @@ public final class JeiOverlayHandler {
         try { return category.getRegistryName(recipe); } catch (Exception e) { return null; }
     }
 
-    private static java.lang.reflect.Method TRANSFER_BUTTON_ACCESSOR;
+    private static Field TRANSFER_BUTTON_FIELD;
     private static Field TRANSFER_BUTTON_INNER_FIELD;
 
     /**
      * RecipeLayoutWithButtons → transferButton (RecipeTransferButton) → 内部 GuiIconButton (AbstractWidget) → visible=true。
      * EDIT 用に「+」を常時表示。
+     * <p>JEI 1.21: transferButton は public アクセサが無い private field のため getDeclaredField で取得。
      */
     private static void forceTransferButtonVisible(Object wrapped) {
         try {
-            if (TRANSFER_BUTTON_ACCESSOR == null) {
-                TRANSFER_BUTTON_ACCESSOR = wrapped.getClass().getMethod("transferButton");
+            if (TRANSFER_BUTTON_FIELD == null) {
+                TRANSFER_BUTTON_FIELD = wrapped.getClass().getDeclaredField("transferButton");
+                TRANSFER_BUTTON_FIELD.setAccessible(true);
             }
-            Object transferButton = TRANSFER_BUTTON_ACCESSOR.invoke(wrapped);
+            Object transferButton = TRANSFER_BUTTON_FIELD.get(wrapped);
             if (transferButton == null) return;
             if (TRANSFER_BUTTON_INNER_FIELD == null) {
                 // RecipeTransferButton extends GuiIconToggleButton; "button" field is in parent
