@@ -367,9 +367,12 @@ public class RecipeArea {
                 return im.createTypedIngredient(NeoForgeTypes.FLUID_STACK, fl.stack()).orElse(null);
             }
             if (spec instanceof IngredientSpec.Gas g && g.gasId() != null) {
-                // 1.21: Mekanism chemical (Gas/Infusion/Pigment/Slurry) は ChemicalStack 統合により未対応。
-                //   MekanismIngredientAdapter.toXxxStack + mekanism.client.jei.MekanismJEI.TYPE_xxx を要再実装。 暫定 skip。
-                return null;
+                if (!net.neoforged.fml.ModList.get().isLoaded("mekanism")) return null;
+                // 1.21: Mek chemical は ChemicalStack 単一型に統合。 TYPE_CHEMICAL で JEI ingredient 化。
+                var cs = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toChemicalStack(g);
+                if (cs.isEmpty()) return null;
+                return im.createTypedIngredient(
+                    DIV.credit.client.jei.mek.MekanismIngredientAdapter.chemicalType(), cs).orElse(null);
             }
             // Tag / FluidTag: convert to first matching item/fluid for display
             if (spec instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
@@ -518,8 +521,12 @@ public class RecipeArea {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
-        // 1.21: Mekanism chemical render は ChemicalStack 統合により未対応。
-        //   MekanismIngredientAdapter.toXxxStack + mekanism.client.jei.MekanismJEI.TYPE_xxx を要再実装。 暫定 no-op。
+        if (!net.neoforged.fml.ModList.get().isLoaded("mekanism")) return;
+        // 1.21: Mek ChemicalStack を TYPE_CHEMICAL の renderer で描画
+        var cs = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toChemicalStack(gas);
+        if (cs.isEmpty()) return;
+        var type = DIV.credit.client.jei.mek.MekanismIngredientAdapter.chemicalType();
+        rt.getIngredientManager().getIngredientRenderer(type).render(g, cs, x, y);
     }
 
     public void renderOverlays(GuiGraphics g, int mouseX, int mouseY) {

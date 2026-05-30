@@ -210,8 +210,15 @@ public final class JeiBackend implements CreditRuntimeBackend {
             } else if (base instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
                 type  = mezz.jei.api.neoforge.NeoForgeTypes.FLUID_STACK;
                 value = fl.stack();
+            } else if (base instanceof IngredientSpec.Gas g && g.gasId() != null
+                && net.neoforged.fml.ModList.get().isLoaded("mekanism")) {
+                // 1.21: Mek chemical は単一 ChemicalStack + TYPE_CHEMICAL に統合
+                var cs = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toChemicalStack(g);
+                if (!cs.isEmpty()) {
+                    type  = DIV.credit.client.jei.mek.MekanismIngredientAdapter.chemicalType();
+                    value = cs;
+                }
             }
-            // 1.21: Mekanism chemical (Gas/Infusion/Pigment/Slurry) は ChemicalStack 統合により未対応 → skip
             if (type == null || value == null) return;
             var focus = r.getJeiHelpers().getFocusFactory().createFocus(role, type, value);
             r.getRecipesGui().show(focus);
@@ -267,7 +274,18 @@ public final class JeiBackend implements CreditRuntimeBackend {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void renderChemical(net.minecraft.client.gui.GuiGraphics g,
                                IngredientSpec.Gas chemical, int x, int y) {
-        // 1.21: Mekanism chemical render は ChemicalStack 統合により未対応。
-        //   MekanismIngredientAdapter.toXxxStack + mekanism.client.jei.MekanismJEI.TYPE_xxx を要再実装。 暫定 no-op。
+        if (!net.neoforged.fml.ModList.get().isLoaded("mekanism")) return;
+        if (chemical == null || chemical.gasId() == null) return;
+        IJeiRuntime r = rt();
+        if (r == null) return;
+        try {
+            // 1.21: Mek ChemicalStack を TYPE_CHEMICAL の renderer で描画
+            var cs = DIV.credit.client.jei.mek.MekanismIngredientAdapter.toChemicalStack(chemical);
+            if (cs.isEmpty()) return;
+            var type = DIV.credit.client.jei.mek.MekanismIngredientAdapter.chemicalType();
+            r.getIngredientManager().getIngredientRenderer(type).render(g, cs, x, y);
+        } catch (Throwable t) {
+            Credit.LOGGER.debug("[CraftPattern] JeiBackend.renderChemical failed: {}", t.toString());
+        }
     }
 }

@@ -670,8 +670,12 @@ public class TagBar {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void renderGas(GuiGraphics g, IJeiRuntime rt, IngredientSpec.Gas gas, int x, int y) {
-        // 1.21: Mekanism chemical render は ChemicalStack 統合により未対応。
-        //   MekanismIngredientAdapter.toXxxStack + mekanism.client.jei.MekanismJEI.TYPE_xxx を要再実装。 暫定 no-op。
+        if (!ModList.get().isLoaded("mekanism")) return;
+        // 1.21: Mek ChemicalStack を TYPE_CHEMICAL の renderer で描画
+        var cs = MekanismIngredientAdapter.toChemicalStack(gas);
+        if (cs.isEmpty()) return;
+        var type = MekanismIngredientAdapter.chemicalType();
+        rt.getIngredientManager().getIngredientRenderer(type).render(g, cs, x, y);
     }
 
     /** CHANCE モード時、EditBox 右端に ▾ ボタンを重ねて描画。dropdown 再オープン用。 */
