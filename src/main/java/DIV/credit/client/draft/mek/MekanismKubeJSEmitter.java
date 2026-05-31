@@ -221,8 +221,21 @@ public final class MekanismKubeJSEmitter {
                 return false;
             }
             case REACTION: {
-                // pressurized_reaction: hand-written PressurizedReactionDraft が担当 (= ここは skeleton に委ねる)
-                return false;
+                // pressurized_reaction: item_input + fluid_input + chemical_input → item_output / chemical_output (+ duration)
+                IngredientSpec item  = firstSpec(slots, kinds, SlotKind.ITEM_INPUT);
+                IngredientSpec fluid = firstSpec(slots, kinds, SlotKind.FLUID_INPUT);
+                IngredientSpec chem  = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec itemOut = firstSpec(slots, kinds, SlotKind.ITEM_OUTPUT);
+                IngredientSpec chemOut = firstSpec(slots, kinds, SlotKind.GAS_OUTPUT);
+                if (item == null || fluid == null || chem == null) return false;
+                if (itemOut == null && chemOut == null) return false;
+                out.put("item_input", jsonOf(item, false));
+                out.put("fluid_input", jsonOf(fluid, false));
+                out.put("chemical_input", jsonOf(chem, false));
+                if (itemOut != null) out.put("item_output", jsonOf(itemOut, true));
+                if (chemOut != null) out.put("chemical_output", jsonOf(chemOut, true));
+                out.put("duration", "200");  // TODO numeric 連携 (実値はレシピ依存)
+                return true;
             }
             case CRYSTALLIZING: {  // chemical → item
                 IngredientSpec gas = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
