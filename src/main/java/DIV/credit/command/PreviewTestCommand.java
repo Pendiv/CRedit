@@ -177,7 +177,7 @@ public final class PreviewTestCommand {
             // 7. EMI build (= optional)
             if (emiAvail) {
                 try {
-                    Object emiRenderable = null; // 1.21: EMI backend (runtime.emi) 未移植 → 常に null
+                    var emiRenderable = DIV.credit.client.runtime.emi.EmiPreviewBridge.build(draft, cat);
                     r.emiOk = (emiRenderable != null);
                 } catch (Throwable t) {
                     r.emiOk = false;

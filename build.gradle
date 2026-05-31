@@ -131,6 +131,10 @@ dependencies {
     //   調査メモ: gtceu 1.4.x(1.21初期)は旧ldlib(1.0.28.a, lowdraglib)+configuration、 API は 1.20.1 系に近い。
     //   gtceu 7.0.x も旧ldlib参照。 実機起動には gtceu の依存ツリー一式が必要。 GTSupport は現状 stub。
 
+    // EMI — 第2のレシピビューア (project 580555, emi-1.1.22+1.21.1+neoforge)。 1.20.1 と同 1.1.22 系で API 差分最小。
+    //   credit の EMI backend/mixin は dev.emi.emi.api.* + jemi bridge を直接使うため full jar を compile+runtime に。
+    implementation "curse.maven:emi-580555:6420931"
+
     // KubeJS — NOT a compile dependency (credit emits .js as text; zero KubeJS imports). Loaded at dev
     // runtime only, to verify emitted scripts actually apply. rhino/architectury resolve transitively.
     runtimeOnly "dev.latvian.mods:kubejs-neoforge:${kubejs_version}"

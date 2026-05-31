@@ -65,7 +65,7 @@ public final class PreviewBus {
         if (DIV.credit.CreditConfig.isEmiIntegrationEnabled()
             && source instanceof DraftPreviewSource dps) {
             try {
-                PreviewRenderable emi = null; // 1.21: EMI backend (runtime.emi) 未移植
+                PreviewRenderable emi = DIV.credit.client.runtime.emi.EmiPreviewBridge.build(dps.getDraft(), category);
                 if (emi != null) {
                     PreviewWindowManager.INSTANCE.open(label, emi);
                     return;

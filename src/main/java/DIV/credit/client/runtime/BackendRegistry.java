@@ -41,7 +41,9 @@ public final class BackendRegistry {
         boolean hasEmi = ModList.get().isLoaded("emi");
 
         // backend 候補登録 (= 利用可能なら instance 生成)
-        // 1.21: EMI backend (runtime.emi) は未移植のため候補登録しない
+        if (hasEmi) {
+            all.add(new DIV.credit.client.runtime.emi.EmiBackend());
+        }
 
         if (hasJei) {
             all.add(new DIV.credit.client.runtime.jei.JeiBackend());

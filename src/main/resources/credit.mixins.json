@@ -1,11 +1,13 @@
 {
-  "required": true,
+  "required": false,
   "minVersion": "0.8",
   "package": "DIV.credit.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
   ],
   "client": [
+    "EmiRecipeFillerMixin",
+    "RecipeFillButtonWidgetMixin"
   ],
   "injectors": {
     "defaultRequire": 1
