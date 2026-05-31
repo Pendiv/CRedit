@@ -127,11 +127,9 @@ dependencies {
     // NeoForge 1.21: no deobf needed. credit will compile against Mek API once the chemical adapter is un-stubbed.
     implementation "curse.maven:mekanism-268560:7132168"
 
-    // GregTech CEu Modern (gtceu) — experimental 1.21 support (project 890405, gtceu-1.21.1-7.0.1).
-    //   gtceu API references LDLib (project 626676). compileOnly = GTSupport un-stub を可能にする。
-    //   注意: 1.6.4(1.20.1)→7.0.x(1.21.1) は major API 変更。 また実機起動には gtceu の依存ツリー一式 (LDLib 他) が必要。
-    compileOnly "curse.maven:gtceu-890405:6766269"
-    compileOnly "curse.maven:ldlib-626676:7377712"
+    // GregTech (gtceu) 対応は保留 (= 別セッション)。 gtceu↔ldlib(旧/2)↔configuration のバージョン整合が要。
+    //   調査メモ: gtceu 1.4.x(1.21初期)は旧ldlib(1.0.28.a, lowdraglib)+configuration、 API は 1.20.1 系に近い。
+    //   gtceu 7.0.x も旧ldlib参照。 実機起動には gtceu の依存ツリー一式が必要。 GTSupport は現状 stub。
 
     // KubeJS — NOT a compile dependency (credit emits .js as text; zero KubeJS imports). Loaded at dev
     // runtime only, to verify emitted scripts actually apply. rhino/architectury resolve transitively.
