@@ -76,6 +76,16 @@ public final class PreviewTestCommand {
         return runTest("all");
     }
 
+    /** dev 自動テスト用: ワールド参加フックから呼ぶ no-manual 入口。 結果は credit_previewtest/ に出力 + log marker。 */
+    public static void runAllToFile() {
+        try {
+            runTest("all");
+            Credit.LOGGER.info("[CraftPattern][PreviewTest] auto-run done (-> run/credit_previewtest/)");
+        } catch (Throwable t) {
+            Credit.LOGGER.error("[CraftPattern][PreviewTest] auto-run failed", t);
+        }
+    }
+
     private static int runTest(String filter) {
         IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
         if (rt == null) {
@@ -160,13 +170,10 @@ public final class PreviewTestCommand {
             if (sampleDrawable == null) { r.status = "FAIL_LOAD"; r.note = "sample drawable null"; return r; }
             boolean loaded = draft.loadFromRecipe(sampleDrawable);
             if (!loaded) { r.status = "FAIL_LOAD"; r.note = "loadFromRecipe returned false"; return r; }
-            // 5. synth
-            net.minecraft.world.item.crafting.Recipe<?> synth = draft.synthesizePreviewRecipe();
-            if (synth == null) { r.status = "FAIL_SYNTH"; r.note = "synthesizePreviewRecipe = null"; return r; }
-            r.synthClass = synth.getClass().getSimpleName();
-            // 6. JEI build
-            IRecipeLayoutDrawable<?> jeiDrawable = JeiRenderBridge.build(cat, synth);
-            r.jeiOk = (jeiDrawable != null);
+            // 5. v1.21 汎用 preview: draft 編集状態を category drawable に重ねて構築 (synthesizePreviewRecipe 非依存)。
+            IRecipeLayoutDrawable<?> previewDrawable = DIV.credit.client.recipe.RecipeArea.buildPreviewDrawable(cat, draft);
+            r.jeiOk = (previewDrawable != null);
+            if (!r.jeiOk) r.note = "buildPreviewDrawable = null";
             // 7. EMI build (= optional)
             if (emiAvail) {
                 try {

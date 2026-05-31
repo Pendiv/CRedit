@@ -55,6 +55,22 @@ public final class EmitTestHarness {
         event.enqueueWork(EmitTestHarness::run);
     }
 
+    /**
+     * dev no-manual preview 検証: {@code -Dcredit.autopreviewtest=1} 時のみ、 ワールド参加後 (= JEI runtime ready)
+     * に previewtest を自動実行して結果をファイル出力。 quickPlay と併用すれば「起動だけ」で汎用性が測れる。
+     */
+    @SubscribeEvent
+    public static void onLoggingIn(net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn event) {
+        if (!"1".equals(System.getProperty("credit.autopreviewtest"))) return;
+        Thread t = new Thread(() -> {
+            try { Thread.sleep(8000); } catch (InterruptedException ignored) {}  // JEI runtime 待ち
+            net.minecraft.client.Minecraft.getInstance().execute(
+                DIV.credit.command.PreviewTestCommand::runAllToFile);
+        }, "credit-autopreviewtest");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private static void run() {
         try {
             Files.createDirectories(DIR);
