@@ -44,17 +44,21 @@ public final class PreviewBus {
 
         // 1. JEI path (= base、 通常ここで成功)
         if (isJeiReady()) {
-            Object recipe = source.getRecipeObject();
-            if (recipe != null) {
-                IRecipeLayoutDrawable<?> drawable = JeiRenderBridge.build(category, recipe);
-                if (drawable != null) {
-                    PreviewWindowManager.INSTANCE.open(label, new JeiPreviewRenderable(drawable));
-                    return;
-                }
-                Credit.LOGGER.info("[CraftPattern] PreviewBus: JEI drawable build failed, trying EMI fallback");
+            IRecipeLayoutDrawable<?> drawable = null;
+            if (source instanceof DraftPreviewSource dps && dps.getDraft() != null) {
+                // 汎用+正確 preview (1.21): draft の編集状態を category drawable に重ねて描画。
+                //   mod 非依存・編集を正確に反映 (synthesizePreviewRecipe の非バニラ失敗を回避)。
+                drawable = DIV.credit.client.recipe.RecipeArea.buildPreviewDrawable(category, dps.getDraft());
             } else {
-                Credit.LOGGER.info("[CraftPattern] PreviewBus: recipe object null, trying EMI fallback");
+                // ImportedPreviewSource 等 (draft 無し): 従来の合成 recipe → drawable。
+                Object recipe = source.getRecipeObject();
+                if (recipe != null) drawable = JeiRenderBridge.build(category, recipe);
             }
+            if (drawable != null) {
+                PreviewWindowManager.INSTANCE.open(label, new JeiPreviewRenderable(drawable));
+                return;
+            }
+            Credit.LOGGER.info("[CraftPattern] PreviewBus: JEI drawable build failed, trying EMI fallback");
         }
 
         // 2. EMI fallback (= EMI 在 + viewer integration ON 時のみ)

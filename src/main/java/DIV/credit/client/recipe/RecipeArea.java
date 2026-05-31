@@ -238,6 +238,62 @@ public class RecipeArea {
         return rm.createRecipeLayoutDrawable(cat, recipe.get(), empty).orElse(null);
     }
 
+    /**
+     * v1.21 汎用 preview の中核: カテゴリの drawable (= draft.toRecipeInstance が合成できればそれ、
+     * 無ければ category の sample recipe) に draft の編集 slot を重ねて返す。
+     * <p>mod 非依存 (カテゴリ自身のレイアウトを使う) かつ編集を正確に反映する。 RecipeArea の
+     * in-screen 描画と同じ「drawable + slot overlay」を preview でも再利用するための静的入口。
+     * sample が無いカテゴリのみ null (= 例外)。
+     */
+    @Nullable
+    public static IRecipeLayoutDrawable<?> buildPreviewDrawable(IRecipeCategory<?> cat, RecipeDraft draft) {
+        IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+        if (rt == null || cat == null || draft == null) return null;
+        IRecipeManager rm = rt.getRecipeManager();
+        IFocusGroup empty = rt.getJeiHelpers().getFocusFactory().getEmptyFocusGroup();
+        IRecipeLayoutDrawable<?> drawable = null;
+        try { drawable = createDrawableFromDraft(rm, cat, draft, empty); } catch (Exception ignored) {}
+        if (drawable == null) {
+            try { drawable = createDrawableFromExisting(rm, cat, empty); } catch (Exception ignored) {}
+        }
+        if (drawable == null) return null;
+        try { drawable.tick(); } catch (Exception ignored) {}
+        overlayDraftSlots(drawable, draft);
+        return drawable;
+    }
+
+    /**
+     * drawable の各 slot に draft の編集 spec を displayIngredients で重ねる (静的・preview/in-screen 共通)。
+     * CATALYST slot は触らない。 Tag spec は cycler overlay を抑制。
+     */
+    public static void overlayDraftSlots(IRecipeLayoutDrawable<?> drawable, RecipeDraft draft) {
+        if (drawable == null || DISPLAY_INGREDIENTS_FIELD == null || draft == null) return;
+        IJeiRuntime rt = CraftPatternJeiPlugin.runtime;
+        if (rt == null) return;
+        var im = rt.getIngredientManager();
+        var views = drawable.getRecipeSlotsView().getSlotViews();
+        int limit = Math.min(views.size(), draft.slotCount());
+        for (int i = 0; i < views.size(); i++) {
+            IRecipeSlotView view = views.get(i);
+            if (view.getRole() == mezz.jei.api.recipe.RecipeIngredientRole.CATALYST) continue;
+            IngredientSpec spec = (i < limit) ? draft.getSlot(i) : IngredientSpec.EMPTY;
+            List<ITypedIngredient<?>> displayList = List.of();
+            if (!spec.isEmpty()) {
+                ITypedIngredient<?> ti = specToTypedIngredient(im, spec);
+                if (ti != null) displayList = List.of(ti);
+            }
+            try { DISPLAY_INGREDIENTS_FIELD.set(view, displayList); } catch (Exception ignored) {}
+            if (OVERLAY_FIELD != null) {
+                try {
+                    IngredientSpec base = spec.unwrap();
+                    if (base instanceof IngredientSpec.Tag || base instanceof IngredientSpec.FluidTag) {
+                        OVERLAY_FIELD.set(view, null);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
     private void repositionDrawable() {
         if (drawable == null) return;
         Rect2i rect = drawable.getRect();
