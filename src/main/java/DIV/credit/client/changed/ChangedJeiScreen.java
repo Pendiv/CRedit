@@ -244,7 +244,10 @@ public class ChangedJeiScreen extends Screen {
         if (items.isEmpty()) return 100;
         var cat = categories.get(selectedCatIdx);
         if (cat == null) return MOD_PLATE_H;  // v3.14: placeholder plate 高さ固定
-        var d = JeiRenderBridge.build(cat, items.get(0).recipe());
+        var first0 = items.get(0);
+        var d = (first0.draft() != null)
+            ? DIV.credit.client.recipe.RecipeArea.buildPreviewDrawable(cat, first0.draft())
+            : JeiRenderBridge.build(cat, first0.recipe());
         if (d == null) return 100;
         return d.getRectWithBorder().getHeight();
     }
@@ -269,12 +272,11 @@ public class ChangedJeiScreen extends Screen {
         int built = 0, failed = 0;
         for (int i = start; i < end; i++) {
             var item = items.get(i);
-            if (item.recipe() == null) {
-                // mod recipe (category 解決済だが Recipe<?> 未復元) → plate
-                visiblePlaceholderItems.add(item);
-                continue;
-            }
-            var d = JeiRenderBridge.build(cat, item.recipe());
+            // v1.21: draft があれば汎用 preview (buildPreviewDrawable で category drawable + 編集 overlay)。
+            //   無ければ従来の recipe→build。 どちらも不可なら plate にフォールバック。
+            var d = (item.draft() != null)
+                ? DIV.credit.client.recipe.RecipeArea.buildPreviewDrawable(cat, item.draft())
+                : (item.recipe() != null ? JeiRenderBridge.build(cat, item.recipe()) : null);
             if (d != null) {
                 visibleDrawables.add(d);
                 visibleTags.add(item.sourceTag());

@@ -81,7 +81,9 @@ public final class ChangedRecipeCollector {
                        @org.jetbrains.annotations.Nullable Recipe<?> recipe,
                        @org.jetbrains.annotations.Nullable IRecipeCategory<?> category,
                        @org.jetbrains.annotations.Nullable Recipe<?> origRecipe,
-                       SourceTag sourceTag) {}
+                       SourceTag sourceTag,
+                       // v1.21: 編集 draft (= 汎用 preview の源)。 draftSnap 経路でのみ非null。
+                       @org.jetbrains.annotations.Nullable DIV.credit.client.draft.RecipeDraft draft) {}
 
     /** Phase 3 series: collect 中間 — ImportedRecipe + source tag + origSnap + draftSnap + origDraftSnap。
      *  staging 経路: origSnap/origDraftSnap=null、 draftSnap=stage 時の Draft snapshot。
@@ -177,13 +179,13 @@ public final class ChangedRecipeCollector {
                                 DIV.credit.client.draft.DraftStore.CraftingVariant.SHAPED);
                         if (d != null) {
                             DIV.credit.client.draft.DraftPersistence.applyTo(d, t.draftSnap());
+                            // v1.21: recipe(=toRecipeInstance, 非バニラで null 可) に依存せず draft を保持。
+                            //   描画は ChangedJeiScreen が buildPreviewDrawable(cat, draft) で汎用的に行う。
                             Recipe<?> recipe = d.toRecipeInstance();
-                            if (recipe != null) {
-                                map.computeIfAbsent(cat, k -> new ArrayList<>())
-                                    .add(new Item(r, recipe, cat, origRecipe, t.tag()));
-                                ok++;
-                                continue;
-                            }
+                            map.computeIfAbsent(cat, k -> new ArrayList<>())
+                                .add(new Item(r, recipe, cat, origRecipe, t.tag(), d));
+                            ok++;
+                            continue;
                         }
                     } catch (Exception e) {
                         Credit.LOGGER.warn("[C6003] draftSnap → recipe failed for {} ({}): {}",
@@ -197,13 +199,13 @@ public final class ChangedRecipeCollector {
                 // mod recipe: recipeType key (= "modid.type") を ResourceLocation 経由で category lookup
                 IRecipeCategory<?> cat = resolveModCategory(r.recipeType());
                 if (cat == null) {
-                    placeholders.add(new Item(r, null, null, origRecipe, t.tag()));
+                    placeholders.add(new Item(r, null, null, origRecipe, t.tag(), null));
                     placeholder++;
                     continue;
                 }
                 // recipe=null だが category 解決済 → 通常 bucket に
                 map.computeIfAbsent(cat, k -> new ArrayList<>())
-                    .add(new Item(r, null, cat, origRecipe, t.tag()));
+                    .add(new Item(r, null, cat, origRecipe, t.tag(), null));
                 placeholder++;  // count 上は placeholder (= drawable 未復元) 扱い
                 continue;
             }
@@ -214,7 +216,7 @@ public final class ChangedRecipeCollector {
             IRecipeCategory<?> cat = JeiRenderBridge.findCategoryForRecipe(recipe);
             if (cat == null) { catFail++; continue; }
             map.computeIfAbsent(cat, k -> new ArrayList<>())
-                .add(new Item(r, recipe, cat, origRecipe, t.tag()));
+                .add(new Item(r, recipe, cat, origRecipe, t.tag(), null));
             ok++;
         }
         // unknown type の mod recipe のみ null bucket (= 旧 「Mod」 一括) に集積

@@ -45,6 +45,28 @@ public class StonecuttingDraft implements RecipeDraft {
         slots[i] = s;
     }
 
+    /** v1.21: 元 stonecutting レシピを draft にロード (= 編集モード / preview の前提)。 */
+    @Override
+    public boolean loadFromRecipe(mezz.jei.api.gui.IRecipeLayoutDrawable<?> layout) {
+        Object recipe = layout.getRecipe();
+        // 1.21: vanilla recipe は RecipeHolder ラップ → unwrap
+        if (recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> rh) recipe = rh.value();
+        if (!(recipe instanceof StonecutterRecipe sr)) return false;
+        for (int i = 0; i < slots.length; i++) slots[i] = IngredientSpec.EMPTY;
+        var ings = sr.getIngredients();
+        if (!ings.isEmpty()) {
+            net.minecraft.world.item.ItemStack[] matches = ings.get(0).getItems();
+            if (matches.length > 0 && !matches[0].isEmpty()) {
+                slots[IDX_INPUT] = new IngredientSpec.Item(matches[0].copy());
+            }
+        }
+        net.minecraft.world.item.ItemStack out = sr.getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
+        if (out != null && !out.isEmpty()) {
+            slots[IDX_OUTPUT] = new IngredientSpec.Item(out.copy());
+        }
+        return true;
+    }
+
     @Override
     public Recipe<?> toRecipeInstance() {
         Ingredient ing = RecipeDraft.toIngredient(slots[IDX_INPUT]);
