@@ -340,8 +340,9 @@ public interface RecipeDraft {
         return null;
     }
 
+    /** public: dev emit テストハーネスから item→KubeJS文字列翻訳 (#2 DataComponents) を直接検証するため。 */
     @Nullable
-    static String formatItemString(ItemStack stack) {
+    public static String formatItemString(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return null;
         return formatItemStringWithNbt(stack, stack.getCount());
     }

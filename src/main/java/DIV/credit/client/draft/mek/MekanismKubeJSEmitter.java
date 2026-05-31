@@ -85,6 +85,11 @@ public final class MekanismKubeJSEmitter {
         SCHEMA_BY_UID.put("pressurized_reaction_chamber",     new SchemaInfo("reaction",            Pattern.REACTION));
         // crystallizing
         SCHEMA_BY_UID.put("chemical_crystallizer",            new SchemaInfo("crystallizing",       Pattern.CRYSTALLIZING));
+        // 1.21: JEI category uid path = recipe-type 名 (= kjsName) で、 1.20.1 の machine 名ではない。
+        //   各 schema を kjsName でも引けるよう別名登録 (rotary は condensentrating/decondensentrating で既登録済)。
+        for (SchemaInfo si : new java.util.ArrayList<>(SCHEMA_BY_UID.values())) {
+            SCHEMA_BY_UID.putIfAbsent(si.kjsName(), si);
+        }
     }
 
     /**
@@ -107,224 +112,196 @@ public final class MekanismKubeJSEmitter {
         LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         if (!buildFields(info.pattern, slots, kinds, fields)) return null;
         if (fields.isEmpty()) return null;
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("    event.recipes.mekanism.").append(info.kjsName).append("({\n");
-        int i = 0, n = fields.size();
-        for (Map.Entry<String, String> e : fields.entrySet()) {
-            sb.append("        ").append(e.getKey()).append(": ").append(e.getValue());
-            if (++i < n) sb.append(",");
-            sb.append("\n");
-        }
-        sb.append("    }).id('").append(recipeId).append("');\n");
-        return sb.toString();
+        // 1.21: KubeJS Mek アドオン (event.recipes.mekanism.*) に依存せず、 event.custom 生JSON で出力。
+        //   Mek の RecipeSerializer が直接消費する形 (= /reload で適用)。 type は recipe-type uid。
+        return buildEventCustom(recipeId, "mekanism:" + info.kjsName, fields);
     }
 
     private static boolean buildFields(Pattern p, IngredientSpec[] slots, SlotKind[] kinds, LinkedHashMap<String, String> out) {
         switch (p) {
-            case ITEM_TO_ITEM: {
-                String in  = firstValue(slots, kinds, true);
-                String op  = firstValue(slots, kinds, false);
+            case ITEM_TO_ITEM: {  // input + output (item→item / item→chemical / chemical→item など単一 i/o)
+                IngredientSpec in = firstInput(slots, kinds);
+                IngredientSpec op = firstOutput(slots, kinds);
                 if (in == null || op == null) return false;
-                out.put("input", in);
-                out.put("output", op);
+                out.put("input",  jsonOf(in, false));
+                out.put("output", jsonOf(op, true));
                 return true;
             }
             case SAWING: {
-                String in   = firstOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                List<String> outs = allOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
+                IngredientSpec in = firstSpec(slots, kinds, SlotKind.ITEM_INPUT);
+                List<IngredientSpec> outs = allSpecs(slots, kinds, SlotKind.ITEM_OUTPUT);
                 if (in == null || outs.isEmpty()) return false;
-                out.put("input", in);
-                out.put("mainOutput", outs.get(0));
-                if (outs.size() >= 2) out.put("secondaryOutput", outs.get(1));
+                out.put("input", jsonOf(in, false));
+                out.put("main_output", jsonOf(outs.get(0), true));
+                if (outs.size() >= 2) out.put("secondary_output", jsonOf(outs.get(1), true));
                 return true;
             }
             case COMBINING: {
-                List<String> ins = allOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                String op  = firstOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
+                List<IngredientSpec> ins = allSpecs(slots, kinds, SlotKind.ITEM_INPUT);
+                IngredientSpec op = firstSpec(slots, kinds, SlotKind.ITEM_OUTPUT);
                 if (ins.size() < 2 || op == null) return false;
-                out.put("mainInput",  ins.get(0));
-                out.put("extraInput", ins.get(1));
-                out.put("output", op);
+                out.put("main_input",  jsonOf(ins.get(0), false));
+                out.put("extra_input", jsonOf(ins.get(1), false));
+                out.put("output", jsonOf(op, true));
                 return true;
             }
-            case TWO_GAS_TO_GAS: {
-                List<String> ins = allOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String op  = firstOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
+            case TWO_GAS_TO_GAS: {  // chemical_infusing / pigment_mixing
+                List<IngredientSpec> ins = allSpecs(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op = firstSpec(slots, kinds, SlotKind.GAS_OUTPUT);
                 if (ins.size() < 2 || op == null) return false;
-                out.put("leftInput",  ins.get(0));
-                out.put("rightInput", ins.get(1));
-                out.put("output", op);
+                out.put("left_input",  jsonOf(ins.get(0), false));
+                out.put("right_input", jsonOf(ins.get(1), false));
+                out.put("output", jsonOf(op, true));
                 return true;
             }
-            case ITEM_AND_CHEMICAL: {
-                String item = firstOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                String chem = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String op   = firstOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
+            case ITEM_AND_CHEMICAL: {  // purifying / injecting / compressing / painting / metallurgic_infusing
+                IngredientSpec item = firstSpec(slots, kinds, SlotKind.ITEM_INPUT);
+                IngredientSpec chem = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op   = firstSpec(slots, kinds, SlotKind.ITEM_OUTPUT);
                 if (item == null || chem == null || op == null) return false;
-                out.put("itemInput", item);
-                out.put("chemicalInput", chem);
-                out.put("output", op);
+                out.put("item_input", jsonOf(item, false));
+                out.put("chemical_input", jsonOf(chem, false));
+                out.put("output", jsonOf(op, true));
+                out.put("per_tick_usage", "false");
                 return true;
             }
-            case DISSOLUTION: {
-                String item = firstOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                String gas  = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                // dissolution は output が GAS なので GAS_OUTPUT を見る
-                String op   = firstOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
+            case DISSOLUTION: {  // item + chemical → chemical (best-effort, JSON 例が data 内に無いため未確証)
+                IngredientSpec item = firstSpec(slots, kinds, SlotKind.ITEM_INPUT);
+                IngredientSpec gas  = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op   = firstSpec(slots, kinds, SlotKind.GAS_OUTPUT);
                 if (item == null || gas == null || op == null) return false;
-                out.put("itemInput", item);
-                out.put("gasInput", gas);
-                out.put("output", op);
+                out.put("item_input", jsonOf(item, false));
+                out.put("chemical_input", jsonOf(gas, false));
+                out.put("output", jsonOf(op, true));
+                out.put("per_tick_usage", "false");
                 return true;
             }
-            case NUCLEOSYNTHESIZING: {
-                String item = firstOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                String gas  = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String op   = firstOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
+            case NUCLEOSYNTHESIZING: {  // item_input + chemical_input + output + duration
+                IngredientSpec item = firstSpec(slots, kinds, SlotKind.ITEM_INPUT);
+                IngredientSpec gas  = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op   = firstSpec(slots, kinds, SlotKind.ITEM_OUTPUT);
                 if (item == null || gas == null || op == null) return false;
-                out.put("itemInput", item);
-                out.put("gasInput", gas);
-                out.put("output", op);
-                out.put("duration", "100");  // TODO numeric 連携
+                out.put("item_input", jsonOf(item, false));
+                out.put("chemical_input", jsonOf(gas, false));
+                out.put("output", jsonOf(op, true));
+                out.put("duration", "200");  // TODO numeric 連携 (実値はレシピ依存)
+                out.put("per_tick_usage", "false");
                 return true;
             }
-            case WASHING: {
-                String fluid  = firstOfKind(slots, kinds, SlotKind.FLUID_INPUT);
-                String slurryIn = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String slurryOut = firstOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
-                if (fluid == null || slurryIn == null || slurryOut == null) return false;
-                out.put("fluidInput", fluid);
-                out.put("slurryInput", slurryIn);
-                out.put("output", slurryOut);
+            case WASHING: {  // fluid + chemical → chemical (best-effort)
+                IngredientSpec fluid = firstSpec(slots, kinds, SlotKind.FLUID_INPUT);
+                IngredientSpec chem  = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op    = firstSpec(slots, kinds, SlotKind.GAS_OUTPUT);
+                if (fluid == null || chem == null || op == null) return false;
+                out.put("fluid_input", jsonOf(fluid, false));
+                out.put("chemical_input", jsonOf(chem, false));
+                out.put("output", jsonOf(op, true));
                 return true;
             }
             case SEPARATING: {
-                String fluid = firstOfKind(slots, kinds, SlotKind.FLUID_INPUT);
-                List<String> gases = allOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
-                if (fluid == null || gases.size() < 2) return false;
-                out.put("input", fluid);
-                out.put("leftGasOutput",  gases.get(0));
-                out.put("rightGasOutput", gases.get(1));
-                return true;
+                // electrolytic_separator: JSON 例が data 内に無くフィールド名未確証 → skeleton fallback に委ねる
+                return false;
             }
             case ROTARY: {
-                // どちら方向か：FLUID_INPUT があれば condensentrating、GAS_INPUT があれば decondensentrating
-                String fluidIn = firstOfKind(slots, kinds, SlotKind.FLUID_INPUT);
-                String gasIn   = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String fluidOut = firstOfKind(slots, kinds, SlotKind.FLUID_OUTPUT);
-                String gasOut   = firstOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
+                // condensentrating: fluid→chemical / decondensentrating: chemical→fluid
+                IngredientSpec fluidIn = firstSpec(slots, kinds, SlotKind.FLUID_INPUT);
+                IngredientSpec gasIn   = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec fluidOut = firstSpec(slots, kinds, SlotKind.FLUID_OUTPUT);
+                IngredientSpec gasOut   = firstSpec(slots, kinds, SlotKind.GAS_OUTPUT);
                 if (fluidIn != null && gasOut != null) {
-                    out.put("fluidInput", fluidIn);
-                    out.put("gasOutput", gasOut);
+                    out.put("fluid_input", jsonOf(fluidIn, false));
+                    out.put("chemical_output", jsonOf(gasOut, true));
                     return true;
                 }
                 if (gasIn != null && fluidOut != null) {
-                    out.put("gasInput", gasIn);
-                    out.put("fluidOutput", fluidOut);
+                    out.put("chemical_input", jsonOf(gasIn, false));
+                    out.put("fluid_output", jsonOf(fluidOut, true));
                     return true;
                 }
                 return false;
             }
             case REACTION: {
-                String item = firstOfKind(slots, kinds, SlotKind.ITEM_INPUT);
-                String fluid = firstOfKind(slots, kinds, SlotKind.FLUID_INPUT);
-                String gas  = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String itemOut = firstOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
-                String gasOut  = firstOfKind(slots, kinds, SlotKind.GAS_OUTPUT);
-                if (item == null || fluid == null || gas == null) return false;
-                if (itemOut == null && gasOut == null) return false;
-                out.put("itemInput", item);
-                out.put("fluidInput", fluid);
-                out.put("gasInput", gas);
-                if (itemOut != null) out.put("itemOutput", itemOut);
-                if (gasOut != null)  out.put("gasOutput",  gasOut);
-                out.put("duration", "100");
-                out.put("energyRequired", "0");
-                return true;
+                // pressurized_reaction: hand-written PressurizedReactionDraft が担当 (= ここは skeleton に委ねる)
+                return false;
             }
-            case CRYSTALLIZING: {
-                String gas = firstOfKind(slots, kinds, SlotKind.GAS_INPUT);
-                String op  = firstOfKind(slots, kinds, SlotKind.ITEM_OUTPUT);
+            case CRYSTALLIZING: {  // chemical → item
+                IngredientSpec gas = firstSpec(slots, kinds, SlotKind.GAS_INPUT);
+                IngredientSpec op  = firstSpec(slots, kinds, SlotKind.ITEM_OUTPUT);
                 if (gas == null || op == null) return false;
-                out.put("chemicalType", "'gas'");  // 我々の IngredientSpec.Gas は GAS のみ対応
-                out.put("input", gas);
-                out.put("output", op);
+                out.put("input",  jsonOf(gas, false));
+                out.put("output", jsonOf(op, true));
                 return true;
             }
         }
         return false;
     }
 
-    /** 1 番目に見つかった input slot 値（どの kind でも可）→ 値文字列。 */
+    // ───── 1.21 spec finders + raw-JSON value builder ─────
+
     @Nullable
-    private static String firstValue(IngredientSpec[] slots, SlotKind[] kinds, boolean wantInput) {
-        for (int i = 0; i < slots.length; i++) {
-            if (slots[i].isEmpty()) continue;
-            boolean isInput = isInputKind(kinds[i]);
-            if (isInput != wantInput) continue;
-            return formatValue(slots[i]);
-        }
+    private static IngredientSpec firstSpec(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want) {
+        for (int i = 0; i < slots.length; i++) if (kinds[i] == want && !slots[i].isEmpty()) return slots[i];
+        return null;
+    }
+
+    private static List<IngredientSpec> allSpecs(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want) {
+        List<IngredientSpec> r = new ArrayList<>();
+        for (int i = 0; i < slots.length; i++) if (kinds[i] == want && !slots[i].isEmpty()) r.add(slots[i]);
+        return r;
+    }
+
+    @Nullable
+    private static IngredientSpec firstInput(IngredientSpec[] slots, SlotKind[] kinds) {
+        for (int i = 0; i < slots.length; i++) if (!slots[i].isEmpty() && isInputKind(kinds[i])) return slots[i];
         return null;
     }
 
     @Nullable
-    private static String firstOfKind(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want) {
-        for (int i = 0; i < slots.length; i++) {
-            if (kinds[i] == want && !slots[i].isEmpty()) {
-                return formatValue(slots[i]);
-            }
-        }
+    private static IngredientSpec firstOutput(IngredientSpec[] slots, SlotKind[] kinds) {
+        for (int i = 0; i < slots.length; i++) if (!slots[i].isEmpty() && !isInputKind(kinds[i])) return slots[i];
         return null;
-    }
-
-    private static List<String> allOfKind(IngredientSpec[] slots, SlotKind[] kinds, SlotKind want) {
-        List<String> result = new ArrayList<>();
-        for (int i = 0; i < slots.length; i++) {
-            if (kinds[i] == want && !slots[i].isEmpty()) {
-                String v = formatValue(slots[i]);
-                if (v != null) result.add(v);
-            }
-        }
-        return result;
     }
 
     private static boolean isInputKind(SlotKind k) {
         return k == SlotKind.ITEM_INPUT || k == SlotKind.FLUID_INPUT || k == SlotKind.GAS_INPUT;
     }
 
-    /** Phase-mek-schema: Mek KubeJS 値表記。 全て KubeJS API object 形式 (Item.of / Ingredient.of / Fluid.of / Gas.of) で
-     *  返す。 文字列 'id' で返すと JSON 化時に JsonPrimitive になり、 Mek RecipeSerializer.fromJson が
-     *  「Expected input to be a JsonObject」 で reject する。 */
+    /**
+     * 1.21 Mek raw-JSON 値オブジェクト (event.custom 用)。 入力は item/fluid/chemical/tag キー、 出力は id キー。
+     * <ul>
+     *   <li>item:  入力 {@code {count:N,item:'id'}} / 出力 {@code {count:N,id:'id'}} / tag {@code {count:N,tag:'id'}}</li>
+     *   <li>fluid: 入力 {@code {amount:N,fluid:'id'}} / 出力 {@code {amount:N,id:'id'}}</li>
+     *   <li>chemical: 入力 {@code {amount:N,chemical:'id'}} / 出力 {@code {amount:N,id:'id'}}</li>
+     * </ul>
+     */
     @Nullable
-    private static String formatValue(IngredientSpec s) {
-        if (s.isEmpty()) return null;
+    private static String jsonOf(IngredientSpec s, boolean output) {
+        if (s == null) return null;
+        s = s.unwrap();
         if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
             int c = Math.max(1, it.stack().getCount());
-            return "Item.of('" + rl + "', " + c + ")";
+            return output ? "{ count: " + c + ", id: '" + rl + "' }"
+                          : "{ count: " + c + ", item: '" + rl + "' }";
         }
         if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            int c = Math.max(1, tg.count());
-            return "Ingredient.of('#" + tg.tagId() + "', " + c + ")";
+            if (output) return null;  // tag は出力にできない
+            return "{ count: " + Math.max(1, tg.count()) + ", tag: '" + tg.tagId() + "' }";
         }
         if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
-            FluidStack fs = fl.stack();
-            ResourceLocation rl = BuiltInRegistries.FLUID.getKey(fs.getFluid());
-            return "Fluid.of('" + rl + "', " + fs.getAmount() + ")";
+            ResourceLocation rl = BuiltInRegistries.FLUID.getKey(fl.stack().getFluid());
+            int amt = Math.max(1, fl.stack().getAmount());
+            return output ? "{ amount: " + amt + ", id: '" + rl + "' }"
+                          : "{ amount: " + amt + ", fluid: '" + rl + "' }";
         }
         if (s instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
-            return "Fluid.of('#" + ft.tagId() + "', " + ft.amount() + ")";
+            if (output) return null;
+            return "{ amount: " + Math.max(1, ft.amount()) + ", tag: '" + ft.tagId() + "' }";
         }
         if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
-            // v3.3.x: chemicalType で KubeJS Mek plugin API 名を切替
-            String api = switch (g.chemicalType()) {
-                case GAS      -> "Gas";
-                case INFUSION -> "InfuseType";
-                case PIGMENT  -> "Pigment";
-                case SLURRY   -> "Slurry";
-            };
-            return api + ".of('" + g.gasId() + "', " + Math.max(1, g.amount()) + ")";
+            int amt = Math.max(1, g.amount());
+            return output ? "{ amount: " + amt + ", id: '" + g.gasId() + "' }"
+                          : "{ amount: " + amt + ", chemical: '" + g.gasId() + "' }";
         }
         return null;
     }
