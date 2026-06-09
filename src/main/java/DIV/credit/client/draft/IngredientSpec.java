@@ -169,9 +169,11 @@ public interface IngredientSpec {
     }
 
     static IngredientSpec withCount(IngredientSpec s, int newCount) {
-        // Configured は base の量を変えて再 wrap（option 維持）
+        // Configured は base の量を変えて再 wrap（option + chance/tierBoost 維持）
+        // 4-arg ctor を使わないと GT_CHANCE の chanceMille/tierBoost が default(1000/0) に
+        // リセットされ、 count 変更だけでユーザー設定の確率が失われる。
         if (s instanceof Configured c) {
-            return new Configured(withCount(c.base(), newCount), c.opt());
+            return new Configured(withCount(c.base(), newCount), c.opt(), c.chanceMille(), c.tierBoost());
         }
         int n = Math.max(1, Math.min(s.maxCount(), newCount));
         if (s instanceof Item it && !it.stack().isEmpty()) {

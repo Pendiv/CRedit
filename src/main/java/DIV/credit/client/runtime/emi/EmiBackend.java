@@ -149,6 +149,16 @@ public final class EmiBackend implements CreditRuntimeBackend {
                 if (uid.equals(emiCat.getId())) {
                     return Optional.of(new CreditCategory(emiCat.getId(), emiCat.getName(), emiCat));
                 }
+                // JemiCategory: 内部 JEI category の uid と照合 (= GT/Mek 等は JEMI bridge 経由で
+                // EMI に出るため emiCat.getId() != JEI uid。 nativeRef には内部 JEI category を入れて
+                // DraftStore.create(IRecipeCategory) がそのまま受けられるようにする。
+                if (emiCat instanceof dev.emi.emi.jemi.JemiCategory jc && jc.category != null) {
+                    try {
+                        if (uid.equals(jc.category.getRecipeType().getUid())) {
+                            return Optional.of(new CreditCategory(uid, emiCat.getName(), jc.category));
+                        }
+                    } catch (Throwable ignored) {}
+                }
             }
         } catch (Throwable t) {
             Credit.LOGGER.warn("[C1003] EmiBackend.findCategory({}) failed: {}", uid, t.toString());

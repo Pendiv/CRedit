@@ -28,3 +28,20 @@ claudecode/
 
 # Run data
 run-data/
+
+# Ad-hoc audit / debug scratch files (never commit)
+build_out.log
+audit_*.txt
+audit_*.json
+_*.txt
+probe.txt
+cp_check.txt
+cp_result.txt
+grep_tmp.txt
+line366.txt
+nf_def.txt
+nf_out.txt
+saved.txt
+saved2.txt
+ROADMAP.md
+AUDIT_SUMMARY.md

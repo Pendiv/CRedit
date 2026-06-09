@@ -116,7 +116,7 @@ public final class JeiBackend implements CreditRuntimeBackend {
 
     // ──────────────── Search / Hover (Phase 2b) ────────────────
 
-    /** 既存 {@link DIV.credit.client.input.JeiSearchFocusHelper} に委譲 (= JEI 内部 reflection)。 */
+    /** {@link DIV.credit.client.input.JeiSearchFocusHelper} に委譲 (= JEI 公式 API hasKeyboardFocus)。 */
     @Override
     public boolean isSearchFocused() {
         if (!isAvailable()) return false;

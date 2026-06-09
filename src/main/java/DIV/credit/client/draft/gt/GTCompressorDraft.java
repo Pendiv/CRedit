@@ -111,8 +111,9 @@ public class GTCompressorDraft implements RecipeDraft {
             b.inputItems(tk, Math.max(1, tg.count()));
         }
 
-        // output
-        IngredientSpec out = slots[IDX_OUTPUT];
+        // output: unwrap で Configured (GT_CHANCE 等) も拾う (= preview 欠落回避)。
+        // chance % overlay 自体は未対応 (= GTRecipeBuilder の chanced API 未確認のため)。
+        IngredientSpec out = slots[IDX_OUTPUT].unwrap();
         if (out instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             b.outputItems(it.stack());
         }

@@ -57,7 +57,9 @@ public final class CreditCommand {
                 .then(Commands.literal("previewtest")
                     .executes(DIV.credit.command.PreviewTestCommand::executeNoArg)
                     .then(Commands.argument("filter", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
-                        .executes(DIV.credit.command.PreviewTestCommand::execute))));
+                        .executes(DIV.credit.command.PreviewTestCommand::execute)))
+                .then(Commands.literal("emittest")
+                    .executes(CreditCommand::doEmitTest)));
         event.getDispatcher().register(root);
 
         // v2.2.0 alias: /craftpattern_setting (既存 /craftpattern* シリーズと同じ命名)
@@ -106,6 +108,15 @@ public final class CreditCommand {
             DIV.credit.Credit.LOGGER.info("[CraftPattern] Registered top-level command aliases: {}",
                 registered.isEmpty() ? "(none — all individual toggles OFF)" : String.join(" ", registered));
         }
+    }
+
+    /**
+     * EmitTest: /credit dev emittest → credit/test_requests.json を読んで emit し、
+     * credit/test_out/ に出力 (= リモートテスト用、 起動せず or 起動後手動で再実行できる起爆口)。
+     */
+    private static int doEmitTest(CommandContext<CommandSourceStack> ctx) {
+        DIV.credit.command.EmitTestRunner.run(true);
+        return Command.SINGLE_SUCCESS;
     }
 
     /** ConfigSpec が未ロードでも安全に bool 取得。失敗時 true (= 既存挙動互換)。 */

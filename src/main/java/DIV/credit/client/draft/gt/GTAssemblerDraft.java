@@ -144,7 +144,10 @@ public class GTAssemblerDraft implements RecipeDraft {
             }
         }
 
-        IngredientSpec out = slots[IDX_ITEM_OUTPUT];
+        // unwrap で Configured (GT_CHANCE 等) ラップ出力も拾う。 ラップを外さないと
+        // preview から出力アイテムごと消える (= emit は正しいが preview だけ欠落していた)。
+        // chance % overlay 自体は未対応 (= GTRecipeBuilder の chanced API 未確認のため)。
+        IngredientSpec out = slots[IDX_ITEM_OUTPUT].unwrap();
         if (out instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
             b.outputItems(it.stack());
         }
@@ -175,18 +178,27 @@ public class GTAssemblerDraft implements RecipeDraft {
 
         List<String> itemInputs    = new ArrayList<>();
         List<String> notConsumable = new ArrayList<>();
+        // v4.1.x: programmed circuit は itemInputs から外し .circuit(n) で別途 emit。
+        Integer circuit = null;
         for (int i = 0; i < ITEM_INPUT_COUNT; i++) {
+            if (GTEmitFormat.isProgrammedCircuit(slots[i])) {
+                circuit = GTEmitFormat.circuitConfig(slots[i]);
+                continue;
+            }
             String s = GTEmitFormat.formatItem(slots[i]);
             if (s == null) continue;
             if (GTEmitFormat.isCatalyst(slots[i])) notConsumable.add(s);
             else                                   itemInputs.add(s);
         }
-        if (itemInputs.isEmpty() && notConsumable.isEmpty()) return null;
+        if (itemInputs.isEmpty() && notConsumable.isEmpty() && circuit == null) return null;
 
         StringBuilder sb = new StringBuilder();
         sb.append("    event.recipes.gtceu.assembler('").append(recipeId).append("')\n");
         if (!itemInputs.isEmpty()) {
             sb.append("        .itemInputs(").append(String.join(", ", itemInputs)).append(")\n");
+        }
+        if (circuit != null) {
+            sb.append("        .circuit(").append(circuit).append(")\n");
         }
         String fluidJs = GTEmitFormat.formatFluid(slots[IDX_FLUID_INPUT]);
         if (fluidJs != null) {

@@ -2,6 +2,7 @@ package DIV.credit.client.input;
 
 import DIV.credit.Credit;
 import DIV.credit.CreditConfig;
+import DIV.credit.client.runtime.BackendRegistry;
 import DIV.credit.client.screen.BuilderScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraftforge.api.distmarker.Dist;
@@ -30,8 +31,10 @@ public final class KeyInterceptor {
         Screen screen = event.getScreen();
         if (!(screen instanceof BuilderScreen)) return;
         if (!safeMaster()) return;
-        // v3.2.x: JEI 検索 bar が focus 中なら譲る (= cancel せず、 JEI listener が key を消費)
-        if (JeiSearchFocusHelper.isJeiSearchFocused()) return;
+        // v4.1.x: viewer (JEI/EMI) 検索 bar が focus 中なら譲る (= cancel せず、 viewer が key を消費)。
+        //   旧実装は JeiSearchFocusHelper をハードコードしており EMI 利用時に focus を検知できず
+        //   「Backspace/Delete だけ cancel = 削除のみ不能」 を招いていた。 backend 抽象経由で両対応。
+        if (BackendRegistry.active().isSearchFocused()) return;
         try {
             screen.keyPressed(event.getKeyCode(), event.getScanCode(), event.getModifiers());
         } catch (Exception e) {
@@ -45,7 +48,7 @@ public final class KeyInterceptor {
         Screen screen = event.getScreen();
         if (!(screen instanceof BuilderScreen)) return;
         if (!safeMaster()) return;
-        if (JeiSearchFocusHelper.isJeiSearchFocused()) return;
+        if (BackendRegistry.active().isSearchFocused()) return;
         try {
             screen.keyReleased(event.getKeyCode(), event.getScanCode(), event.getModifiers());
         } catch (Exception ignored) {}

@@ -162,7 +162,7 @@ public final class FusionCraftingDraft implements RecipeDraft {
                 tryReadEnergy(recipe);
             }
             Credit.LOGGER.info("[CraftPattern] FusionCraftingDraft.loadFromRecipe → {}/{} slots, tier={} energy={}",
-                loaded, n, tier, totalEnergy);
+                loaded, n, tier, totalEnergy.get());
             return loaded > 0;
         } catch (Exception e) {
             Credit.LOGGER.warn("[C4017] FusionCraftingDraft.loadFromRecipe failed: {}", e.toString());
@@ -234,7 +234,7 @@ public final class FusionCraftingDraft implements RecipeDraft {
         else sb.append("'");
         sb.append(" },\n");
         sb.append("        catalyst: { item: '").append(catRl).append("' },\n");
-        sb.append("        total_energy: ").append(totalEnergy).append(",\n");
+        sb.append("        total_energy: ").append(totalEnergy.get()).append(",\n");
         sb.append("        tier: '").append(tier.name()).append("',\n");
         sb.append("        ingredients: [\n");
         boolean any = false;

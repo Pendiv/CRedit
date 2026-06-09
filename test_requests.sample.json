@@ -1,0 +1,38 @@
+{
+  "_comment": "credit EmitTest 入力サンプル。 これを <gamedir>/credit/test_requests.json にコピーして編集すると、 起動時自動 (JEI runtime 確定時) + /credit dev emittest で emit され、 <gamedir>/credit/test_out/ に出力される。 KubeJS は test_out を読まないのでゲームに影響しない。",
+  "_keys": "1要求 = { id(任意), type(必須=JEI category UID), inputs[], outputs[], fields{} }。 ingredient: {item|tag|fluid|fluidtag|gas: 'id', count|amount: N, chemical: GAS|INFUSION|PIGMENT|SLURRY}。 fields は draft の NumericField label に case-insensitive 対応。",
+  "requests": [
+    {
+      "id": "vanilla_shaped",
+      "type": "minecraft:crafting",
+      "inputs": [
+        { "item": "minecraft:iron_ingot", "count": 1 }
+      ],
+      "outputs": [
+        { "item": "minecraft:iron_block" }
+      ]
+    },
+    {
+      "id": "smelting",
+      "type": "minecraft:smelting",
+      "inputs": [
+        { "item": "minecraft:raw_iron" }
+      ],
+      "outputs": [
+        { "item": "minecraft:iron_ingot" }
+      ]
+    },
+    {
+      "id": "gt_assembler",
+      "type": "gtceu:assembler",
+      "inputs": [
+        { "item": "minecraft:iron_ingot", "count": 4 },
+        { "fluid": "minecraft:water", "amount": 1000 }
+      ],
+      "outputs": [
+        { "item": "minecraft:iron_block" }
+      ],
+      "fields": { "duration": 200, "EUt": 30 }
+    }
+  ]
+}

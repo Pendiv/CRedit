@@ -21,7 +21,7 @@ apply plugin: 'org.spongepowered.mixin'
 ext.credit = [
         mod_id                 : 'credit',
         mod_name               : 'credit',
-        mod_version            : '4.1.0',
+        mod_version            : '4.1.1',
         mod_group_id           : 'DIV',
         mod_license            : 'MIT',
         mod_authors            : '',
@@ -81,6 +81,12 @@ minecraft {
 
         client {
             property 'forge.enabledGameTestNamespaces', credit.mod_id
+            // credit EmitTest: -PemitTest 指定時のみ quickPlay で ascii 名ワールド 'emittest' に直行。
+            // → ワールド参加で JEI runtime 確定 → EmitTestRunner が起動時自動実行 → test_out 生成。
+            //   通常起動・IDE 起動には一切影響なし (フラグ無しでは何も変わらない)。
+            if (project.hasProperty('emitTest')) {
+                args '--quickPlaySingleplayer', 'emittest'
+            }
         }
 
         server {

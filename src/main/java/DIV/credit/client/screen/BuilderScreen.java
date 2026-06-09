@@ -732,7 +732,8 @@ public class BuilderScreen extends AbstractContainerScreen<CreditBuilderMenu> {
             if (hover != null) g.renderTooltip(font, hover.tooltip(), Optional.empty(), mouseX, mouseY);
         }
         recipeArea.renderOverlays(g, mouseX, mouseY);
-        recipeArea.renderUserEditTooltip(g, mouseX, mouseY);
+        // v4.1.1: rtui slot の名前二重バグ修正。 編集 slot の tooltip は JEI 自身が displayIngredients
+        // 経由で出す (= renderOverlays) ので、 credit 側の重複 tooltip 描画は撤去。
         tagBar.renderTooltip(g, font, mouseX, mouseY);
         stackBuilder.renderTooltip(g, font, mouseX, mouseY);
         energyHelper.renderTooltip(g, font, mouseX, mouseY);

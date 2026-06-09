@@ -196,7 +196,11 @@ public class PressurizedReactionDraft implements RecipeDraft {
         sb.append("    event.recipes.mekanism.reaction({\n");
         sb.append("        itemInput: '").append(inItemId).append("',\n");
         sb.append("        fluidInput: Fluid.of('").append(inFluidId).append("', ").append(inFluid.getAmount()).append("),\n");
-        sb.append("        gasInput: '").append(inG.gasId()).append(" ").append(inG.amount()).append("',\n");
+        String inGasApi = switch (inG.chemicalType()) {
+            case GAS -> "Gas"; case INFUSION -> "InfuseType"; case PIGMENT -> "Pigment"; case SLURRY -> "Slurry";
+        };
+        sb.append("        gasInput: ").append(inGasApi).append(".of('")
+          .append(inG.gasId()).append("', ").append(inG.amount()).append("),\n");
         if (!outItem.isEmpty()) {
             ResourceLocation outItemId = BuiltInRegistries.ITEM.getKey(outItem.getItem());
             String outStr = outItem.getCount() <= 1 ? "'" + outItemId + "'"
@@ -204,7 +208,11 @@ public class PressurizedReactionDraft implements RecipeDraft {
             sb.append("        itemOutput: ").append(outStr).append(",\n");
         }
         if (outGasSpec instanceof IngredientSpec.Gas oG && oG.gasId() != null) {
-            sb.append("        gasOutput: '").append(oG.gasId()).append(" ").append(oG.amount()).append("',\n");
+            String outGasApi = switch (oG.chemicalType()) {
+                case GAS -> "Gas"; case INFUSION -> "InfuseType"; case PIGMENT -> "Pigment"; case SLURRY -> "Slurry";
+            };
+            sb.append("        gasOutput: ").append(outGasApi).append(".of('")
+              .append(oG.gasId()).append("', ").append(oG.amount()).append("),\n");
         }
         boolean hasDur = duration.isPresent();
         boolean hasEng = energyRequired.isPresent();

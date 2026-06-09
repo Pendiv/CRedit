@@ -22,6 +22,32 @@ public final class GTEmitFormat {
         return s != null && s.option() == IngredientSpec.ItemOption.GT_CATALYST;
     }
 
+    /**
+     * v4.1.x: programmed circuit 入力か判定 (= gtceu:programmed_circuit / 派生 mod の "circuit")。
+     * GT KubeJS は circuit を itemInput でなく専用構文 {@code .circuit(n)} で書くため、 emit 時に
+     * itemInputs から外して別途出す必要がある。 判定は RecipeArea.tryIncrementCircuit と同基準。
+     */
+    public static boolean isProgrammedCircuit(IngredientSpec s) {
+        if (s == null) return false;
+        IngredientSpec base = s.unwrap();
+        if (!(base instanceof IngredientSpec.Item it) || it.stack().isEmpty()) return false;
+        ResourceLocation rl = BuiltInRegistries.ITEM.getKey(it.stack().getItem());
+        if (rl == null) return false;
+        String path = rl.getPath();
+        return path.contains("programmed_circuit") || path.equals("circuit");
+    }
+
+    /** programmed circuit の Configuration NBT 値 (= 配置番号、 未設定なら 0)。 */
+    public static int circuitConfig(IngredientSpec s) {
+        if (s == null) return 0;
+        IngredientSpec base = s.unwrap();
+        if (base instanceof IngredientSpec.Item it && it.stack().hasTag()) {
+            var tag = it.stack().getTag();
+            if (tag != null && tag.contains("Configuration")) return tag.getInt("Configuration");
+        }
+        return 0;
+    }
+
     public static boolean isChance(IngredientSpec s) {
         return s != null && s.option() == IngredientSpec.ItemOption.GT_CHANCE;
     }

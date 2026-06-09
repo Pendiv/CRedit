@@ -668,6 +668,9 @@ public final class GenericDraft implements RecipeDraft {
         java.util.List<String> notConsumable  = new java.util.ArrayList<>();
         java.util.List<String> chancedItemOut = new java.util.ArrayList<>();
         java.util.List<String> chancedFlOut   = new java.util.ArrayList<>();
+        // v4.1.x: programmed circuit は itemInput でなく GT 専用構文 .circuit(n) で emit する。
+        // null = circuit 入力なし。 検出時は configuration NBT を保持して後段で出力。
+        Integer circuit = null;
         for (int i = 0; i < slots.length; i++) {
             IngredientSpec s = slots[i];
             if (s.isEmpty()) continue;
@@ -675,6 +678,11 @@ public final class GenericDraft implements RecipeDraft {
             boolean chance   = DIV.credit.client.draft.gt.GTEmitFormat.isChance(s);
             switch (kinds[i]) {
                 case ITEM_INPUT -> {
+                    // circuit は itemInputs から外し .circuit(n) で別途 emit (= reload で番号が消える bug 修正)
+                    if (DIV.credit.client.draft.gt.GTEmitFormat.isProgrammedCircuit(s)) {
+                        circuit = DIV.credit.client.draft.gt.GTEmitFormat.circuitConfig(s);
+                        break;
+                    }
                     String f = DIV.credit.client.draft.gt.GTEmitFormat.formatItem(s);
                     if (f == null) break;
                     if (catalyst) notConsumable.add(f);
@@ -711,6 +719,7 @@ public final class GenericDraft implements RecipeDraft {
         sb.append("    event.recipes.").append(ns).append('.').append(path)
           .append("('").append(recipeId).append("')\n");
         if (!itemIn.isEmpty())   sb.append("        .itemInputs(").append(String.join(", ", itemIn)).append(")\n");
+        if (circuit != null)     sb.append("        .circuit(").append(circuit).append(")\n");
         if (!fluidIn.isEmpty())  sb.append("        .inputFluids(").append(String.join(", ", fluidIn)).append(")\n");
         if (!itemOut.isEmpty())  sb.append("        .itemOutputs(").append(String.join(", ", itemOut)).append(")\n");
         if (!fluidOut.isEmpty()) sb.append("        .outputFluids(").append(String.join(", ", fluidOut)).append(")\n");

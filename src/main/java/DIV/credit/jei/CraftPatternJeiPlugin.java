@@ -44,5 +44,12 @@ public class CraftPatternJeiPlugin implements IModPlugin {
         } catch (Throwable t) {
             Credit.LOGGER.warn("[C2014] CraftPatternJeiPlugin: JeiBackend smoke test failed: {}", t.toString());
         }
+        // EmitTest 起動時自動実行を予約 (= credit/test_requests.json が在る時だけ arm。 無ければ無音)。
+        //   即実行せず ClientTick で JEI category 登録完了を待ってから発火 (= EmitTestRunner.Hook)。
+        try {
+            DIV.credit.command.EmitTestRunner.armStartupRun();
+        } catch (Throwable t) {
+            Credit.LOGGER.warn("[C8005] EmitTest arm failed: {}", t.toString());
+        }
     }
 }

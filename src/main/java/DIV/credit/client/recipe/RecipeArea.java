@@ -254,7 +254,6 @@ public class RecipeArea {
      */
     private static Field DISPLAY_INGREDIENTS_FIELD;
     private static Field OVERLAY_FIELD;
-    private static final String LDLIB_WRAPPER_CLASS = "com.lowdragmc.lowdraglib.jei.IRecipeIngredientSlotWrapper";
     static {
         try {
             Class<?> cls = Class.forName("mezz.jei.library.gui.ingredients.RecipeSlot");
@@ -264,17 +263,6 @@ public class RecipeArea {
             OVERLAY_FIELD.setAccessible(true);
         } catch (Exception e) {
             Credit.LOGGER.warn("[C4026] Cannot access RecipeSlot fields via reflection: {}", e.toString());
-        }
-    }
-
-    /** RecipeSlot.overlay が LDLib の IRecipeIngredientSlotWrapper か判定。LDLib 未ロード環境でも CCE 回避。 */
-    private static boolean isLDLibWrapped(IRecipeSlotView view) {
-        if (OVERLAY_FIELD == null) return false;
-        try {
-            Object overlay = OVERLAY_FIELD.get(view);
-            return overlay != null && overlay.getClass().getName().equals(LDLIB_WRAPPER_CLASS);
-        } catch (Exception e) {
-            return false;
         }
     }
 
@@ -558,43 +546,11 @@ public class RecipeArea {
         if (drawable != null) drawable.drawOverlays(g, mouseX, mouseY);
     }
 
-    /**
-     * ユーザー編集スロット上にホバー時、中身の名前 + 量を tooltip 表示。
-     * LDLib-wrap slot のみ対象 (非ラップは JEI 自身が displayIngredients 経由で
-     * tooltip 出すので、ここで出すと名前が二重になる)。
-     */
-    public void renderUserEditTooltip(GuiGraphics g, int mouseX, int mouseY) {
-        if (drawable == null || draft == null) return;
-        Optional<RecipeSlotUnderMouse> slotOpt = drawable.getSlotUnderMouse(mouseX, mouseY);
-        if (slotOpt.isEmpty()) return;
-        IRecipeSlotDrawable hoverSlot = slotOpt.get().slot();
-        int idx = findSlotIndex(hoverSlot);
-        if (idx < 0 || idx >= draft.slotCount()) return;
-        IngredientSpec spec = draft.getSlot(idx);
-        if (spec.isEmpty()) return;
-        if (!isLDLibWrapped(hoverSlot)) return;
-        g.renderTooltip(Minecraft.getInstance().font,
-            Component.literal(describeForTooltip(spec)), mouseX, mouseY);
-    }
-
-    private static String describeForTooltip(IngredientSpec s) {
-        if (s instanceof IngredientSpec.Item it && !it.stack().isEmpty()) {
-            return it.stack().getDisplayName().getString() + " ×" + it.stack().getCount();
-        }
-        if (s instanceof IngredientSpec.Tag tg && tg.tagId() != null) {
-            return "#" + tg.tagId() + " ×" + tg.count();
-        }
-        if (s instanceof IngredientSpec.Fluid fl && !fl.stack().isEmpty()) {
-            return fl.stack().getDisplayName().getString() + " " + fl.stack().getAmount() + "mB";
-        }
-        if (s instanceof IngredientSpec.FluidTag ft && ft.tagId() != null) {
-            return "#" + ft.tagId() + " " + ft.amount() + "mB";
-        }
-        if (s instanceof IngredientSpec.Gas g && g.gasId() != null) {
-            return g.gasId() + " " + g.amount() + "mB";
-        }
-        return s.toString();
-    }
+    // v4.1.1: 旧 renderUserEditTooltip / describeForTooltip を撤去。
+    // rtui(LDLib) 編集 slot で credit 独自 tooltip を出していたが、 updateSlotDisplays が
+    // displayIngredients を差すようになった結果、 JEI 自身が drawOverlays で同じ tooltip を出すように
+    // なり「名前だけ二重」化していた。 JEI 側 (フレーバー付きで上位互換) を唯一の源に一本化。
+    // 枠は LDLib widget 描画なので無影響。
 
     public void tick() {
         if (drawable != null) drawable.tick();

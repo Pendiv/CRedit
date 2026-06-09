@@ -90,6 +90,8 @@ public final class DraftPersistence {
             CompoundTag fc = new CompoundTag();
             fc.putString("label", f.label());
             fc.putDouble("v", f.getter().getAsDouble());
+            // v2.1.3 round-trip: nullable field の present 状態も保存 (= unset を復元時に維持)
+            fc.putBoolean("present", f.isPresent().getAsBoolean());
             fields.add(fc);
         }
         t.put("fields", fields);
@@ -123,9 +125,18 @@ public final class DraftPersistence {
                 CompoundTag fc = fields.getCompound(i);
                 var f = byLabel.get(fc.getString("label"));
                 if (f != null) {
-                    double v = fc.getDouble("v");
-                    v = Math.max(f.min(), Math.min(f.max(), v));
-                    f.setter().accept(v);
+                    // present 復元: nullable field で present=false 保存なら clear。
+                    // 非 nullable / 旧 NBT (present 欠落) は後方互換で present=true 扱い。
+                    // fresh draft の NullableLong は present=true 既定のため、 clear を明示
+                    // しないと「ユーザーが消した行」 が値付きで復活する (= unset 喪失バグ)。
+                    boolean present = !f.nullable() || !fc.contains("present") || fc.getBoolean("present");
+                    if (present) {
+                        double v = fc.getDouble("v");
+                        v = Math.max(f.min(), Math.min(f.max(), v));
+                        f.setter().accept(v);
+                    } else {
+                        f.clearer().run();
+                    }
                 }
             }
         } catch (Exception ex) {
